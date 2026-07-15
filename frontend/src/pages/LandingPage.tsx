@@ -1,6 +1,9 @@
 import { ArrowRight, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import Badge from "../components/ui/Badge";
+import Button from "../components/ui/Button";
+
 const swingPhases = ["Address", "Top", "Impact", "Finish"];
 
 function LandingPage() {
@@ -24,12 +27,9 @@ function LandingPage() {
             Log in
           </Link>
 
-          <Link
-            to="/register"
-            className="rounded-full bg-lime px-5 py-2.5 text-sm font-bold !text-canvas-deep shadow-lime transition hover:bg-lime-bright hover:!text-canvas-deep"
-          >
+          <Button to="/register" size="sm">
             Get started
-          </Link>
+          </Button>
         </div>
       </nav>
 
@@ -52,21 +52,15 @@ function LandingPage() {
           </p>
 
           <div className="mt-10 flex flex-wrap gap-4">
-            <Link
-              to="/register"
-              className="inline-flex items-center gap-2 rounded-full bg-lime px-6 py-3.5 font-bold !text-canvas-deep shadow-lime transition hover:bg-lime-bright hover:!text-canvas-deep"
-            >
+            <Button to="/register" size="lg">
               Analyze a swing
               <ArrowRight size={18} strokeWidth={2.4} />
-            </Link>
+            </Button>
 
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 py-3.5 font-semibold text-white transition hover:border-white/25 hover:bg-white/10"
-            >
+            <Button to="/dashboard" size="lg" variant="secondary">
               <Play size={17} />
               View demo
-            </Link>
+            </Button>
           </div>
         </div>
 
@@ -83,9 +77,9 @@ function LandingPage() {
                 </p>
               </div>
 
-              <span className="rounded-full bg-lime-soft/10 px-3 py-1 text-xs font-semibold text-lime-soft">
+              <Badge variant="success">
                 Analysis complete
-              </span>
+              </Badge>
             </div>
 
             <div className="relative aspect-[4/3] bg-[radial-gradient(circle_at_center,_#173222_0%,_#0a130f_62%,_#060c09_100%)]">
