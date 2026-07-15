@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router-dom";
 
+import AnalysisPage from "./pages/AnalysisPage";
 import ComparePage from "./pages/ComparePage";
 import DashboardPage from "./pages/DashboardPage";
 import HistoryPage from "./pages/HistoryPage";
@@ -19,6 +20,7 @@ function App() {
 
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/analysis/new" element={<NewAnalysisPage />} />
+      <Route path="/analysis/:swingId" element={<AnalysisPage />} />
       <Route path="/history" element={<HistoryPage />} />
       <Route path="/compare" element={<ComparePage />} />
       <Route path="/profile" element={<ProfilePage />} />
