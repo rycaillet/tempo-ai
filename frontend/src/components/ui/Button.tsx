@@ -18,15 +18,17 @@ type SharedButtonProps = {
 type NativeButtonProps = SharedButtonProps &
   ButtonHTMLAttributes<HTMLButtonElement> & {
     to?: never;
+    href?: never;
   };
 
 type LinkButtonProps = SharedButtonProps &
-  Omit<LinkProps, "className" | "children"> & {
+  Omit<LinkProps, "children" | "className"> & {
     to: string;
+    href?: never;
   };
 
 type AnchorButtonProps = SharedButtonProps &
-  AnchorHTMLAttributes<HTMLAnchorElement> & {
+  Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "children" | "className"> & {
     href: string;
     to?: never;
   };
@@ -47,13 +49,11 @@ const sizeClasses: Record<ButtonSize, string> = {
   lg: "min-h-14 px-6 text-base",
 };
 
-function buildClassName({
-  variant,
-  size,
-  className,
-}: Required<Pick<SharedButtonProps, "variant" | "size">> & {
-  className?: string;
-}) {
+function buildClassName(
+  variant: ButtonVariant,
+  size: ButtonSize,
+  className?: string,
+) {
   return [
     "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition",
     "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
@@ -65,38 +65,68 @@ function buildClassName({
     .join(" ");
 }
 
-function Button({
-  children,
-  className,
-  variant = "primary",
-  size = "md",
-  ...props
-}: ButtonProps) {
-  const resolvedClassName = buildClassName({
+function Button(props: ButtonProps) {
+  const variant = props.variant ?? "primary";
+  const size = props.size ?? "md";
+
+  const resolvedClassName = buildClassName(
     variant,
     size,
-    className,
-  });
+    props.className,
+  );
 
-  if ("to" in props && props.to) {
+  if ("to" in props && typeof props.to === "string") {
+    const linkProps = props as LinkButtonProps;
+
     return (
-      <Link {...props} className={resolvedClassName}>
-        {children}
+      <Link
+        to={linkProps.to}
+        replace={linkProps.replace}
+        state={linkProps.state}
+        relative={linkProps.relative}
+        preventScrollReset={linkProps.preventScrollReset}
+        viewTransition={linkProps.viewTransition}
+        className={resolvedClassName}
+      >
+        {linkProps.children}
       </Link>
     );
   }
 
-  if ("href" in props && props.href) {
+  if ("href" in props && typeof props.href === "string") {
+    const anchorProps = props as AnchorButtonProps;
+
     return (
-      <a {...props} className={resolvedClassName}>
-        {children}
+      <a
+        href={anchorProps.href}
+        target={anchorProps.target}
+        rel={anchorProps.rel}
+        download={anchorProps.download}
+        aria-label={anchorProps["aria-label"]}
+        className={resolvedClassName}
+      >
+        {anchorProps.children}
       </a>
     );
   }
 
+  const buttonProps = props as NativeButtonProps;
+
   return (
-    <button {...props} className={resolvedClassName}>
-      {children}
+    <button
+      type={buttonProps.type ?? "button"}
+      disabled={buttonProps.disabled}
+      form={buttonProps.form}
+      name={buttonProps.name}
+      value={buttonProps.value}
+      onClick={buttonProps.onClick}
+      onFocus={buttonProps.onFocus}
+      onBlur={buttonProps.onBlur}
+      aria-label={buttonProps["aria-label"]}
+      aria-pressed={buttonProps["aria-pressed"]}
+      className={resolvedClassName}
+    >
+      {buttonProps.children}
     </button>
   );
 }
