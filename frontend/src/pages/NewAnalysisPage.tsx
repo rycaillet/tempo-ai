@@ -1,14 +1,27 @@
+import Container from "../components/ui/Container";
+import PageHeader from "../components/ui/PageHeader";
+import Section from "../components/ui/Section";
+import UploadDropzone from "../components/upload/UploadDropzone";
+import UploadTips from "../components/upload/UploadTips";
+
 function NewAnalysisPage() {
   return (
-    <main className="min-h-screen bg-[#07110d] px-6 py-16 text-white">
-      <div className="mx-auto max-w-7xl">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#84ff4d]">
-          Upload and analyze
-        </p>
-        <h1 className="mt-4 text-5xl font-semibold tracking-[-0.05em]">
-          New Analysis
-        </h1>
-      </div>
+    <main className="min-h-screen bg-canvas text-copy">
+      <Section spacing="lg">
+        <Container size="wide">
+          <PageHeader
+            eyebrow="New Analysis"
+            title="Upload your golf swing"
+            description="Record one swing, upload your video, and receive AI-powered coaching feedback in seconds."
+          />
+
+          <div className="mt-14 grid gap-10 lg:grid-cols-[1.4fr_0.6fr]">
+            <UploadDropzone />
+
+            <UploadTips />
+          </div>
+        </Container>
+      </Section>
     </main>
   );
 }
