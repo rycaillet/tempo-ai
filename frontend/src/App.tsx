@@ -8,6 +8,7 @@ import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import NewAnalysisPage from "./pages/NewAnalysisPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import ProcessingPage from "./pages/ProcessingPage";
 import ProfilePage from "./pages/ProfilePage";
 import RegisterPage from "./pages/RegisterPage";
 
@@ -20,6 +21,7 @@ function App() {
 
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/analysis/new" element={<NewAnalysisPage />} />
+      <Route path="/analysis/processing" element={<ProcessingPage />} />
       <Route path="/analysis/:swingId" element={<AnalysisPage />} />
       <Route path="/history" element={<HistoryPage />} />
       <Route path="/compare" element={<ComparePage />} />
