@@ -7,6 +7,7 @@ export type SwingPhase = {
   label: string;
   timestamp: string;
   status: SwingPhaseStatus;
+  coaching: PhaseCoaching;
 };
 
 export type SwingMetric = {
@@ -56,4 +57,19 @@ export type SwingAnalysis = {
   metrics: SwingMetric[];
   findings: SwingFinding[];
   practicePlan: PracticePlanItem[];
+};
+
+export type PoseVariant =
+  | "address"
+  | "takeaway"
+  | "top"
+  | "downswing"
+  | "impact"
+  | "finish";
+
+export type PhaseCoaching = {
+  headline: string;
+  message: string;
+  poseVariant: PoseVariant;
+  findingId?: string;
 };

@@ -16,43 +16,82 @@ export const demoAnalysis: SwingAnalysis = {
   },
 
   phases: [
-    {
-      id: "address",
-      label: "Address",
-      timestamp: "0.0s",
-      status: "complete",
+  {
+    id: "address",
+    label: "Address",
+    timestamp: "0.0s",
+    status: "complete",
+    coaching: {
+      headline: "Athletic setup",
+      message:
+        "Your address position creates a stable base with balanced knee flex and good upper-body posture.",
+      poseVariant: "address",
     },
-    {
-      id: "takeaway",
-      label: "Takeaway",
-      timestamp: "0.6s",
-      status: "complete",
+  },
+  {
+    id: "takeaway",
+    label: "Takeaway",
+    timestamp: "0.6s",
+    status: "complete",
+    coaching: {
+      headline: "Controlled takeaway",
+      message:
+        "The club and chest move together well during the opening portion of the backswing.",
+      poseVariant: "takeaway",
     },
-    {
-      id: "top",
-      label: "Top",
-      timestamp: "1.2s",
-      status: "complete",
+  },
+  {
+    id: "top",
+    label: "Top",
+    timestamp: "1.2s",
+    status: "complete",
+    coaching: {
+      headline: "Smooth the transition",
+      message:
+        "Your backswing position is solid, but the first move down begins slightly quickly. A calmer transition will improve sequencing.",
+      poseVariant: "top",
+      findingId: "finding-2",
     },
-    {
-      id: "downswing",
-      label: "Downswing",
-      timestamp: "1.5s",
-      status: "complete",
+  },
+  {
+    id: "downswing",
+    label: "Downswing",
+    timestamp: "1.5s",
+    status: "complete",
+    coaching: {
+      headline: "Preserve space for your arms",
+      message:
+        "Your hips begin moving toward the ball during the downswing. Maintaining hip depth will create more room through impact.",
+      poseVariant: "downswing",
+      findingId: "finding-1",
     },
-    {
-      id: "impact",
-      label: "Impact",
-      timestamp: "1.7s",
-      status: "active",
+  },
+  {
+    id: "impact",
+    label: "Impact",
+    timestamp: "1.7s",
+    status: "active",
+    coaching: {
+      headline: "Maintain posture through impact",
+      message:
+        "Your contact position remains balanced, but preserving your spine inclination longer may improve strike consistency.",
+      poseVariant: "impact",
+      findingId: "finding-3",
     },
-    {
-      id: "finish",
-      label: "Finish",
-      timestamp: "2.4s",
-      status: "complete",
+  },
+  {
+    id: "finish",
+    label: "Finish",
+    timestamp: "2.4s",
+    status: "complete",
+    coaching: {
+      headline: "Balanced finish",
+      message:
+        "Your finish is one of the strongest parts of this swing. Your weight is supported over the lead side with controlled rotation.",
+      poseVariant: "finish",
     },
-  ],
+  },
+],
 
   metrics: [
     {

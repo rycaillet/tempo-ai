@@ -11,19 +11,20 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import AnalysisSkeleton from "../components/analysis/AnalysisSkeleton";
+import PhaseCoachPanel from "../components/analysis/PhaseCoachPanel";
+import SwingPoseOverlay from "../components/analysis/SwingPoseOverlay";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Container from "../components/ui/Container";
 import Panel from "../components/ui/Panel";
 import ScoreRing from "../components/ui/ScoreRing";
 import Section from "../components/ui/Section";
-import { useEffect, useState } from "react";
-
 import { getAnalysis } from "../services/analysisService";
 import type { SwingAnalysis } from "../types/analysis";
-import AnalysisSkeleton from "../components/analysis/AnalysisSkeleton";
 
 const severityVariant = {
   High: "warning",
@@ -35,17 +36,16 @@ function AnalysisPage() {
   const { swingId } = useParams();
 
   const [analysis, setAnalysis] = useState<SwingAnalysis | null>(null);
+  const [selectedPhaseId, setSelectedPhaseId] = useState("impact");
 
   useEffect(() => {
     async function loadAnalysis() {
-      const result = await getAnalysis(
-        swingId ?? "demo-swing",
-      );
+      const result = await getAnalysis(swingId ?? "demo-swing");
 
       setAnalysis(result);
     }
 
-    loadAnalysis();
+    void loadAnalysis();
   }, [swingId]);
 
   if (!analysis) {
@@ -59,6 +59,16 @@ function AnalysisPage() {
     findings: swingFindings,
     practicePlan,
   } = analysis;
+
+  const selectedPhase =
+    swingPhases.find((phase) => phase.id === selectedPhaseId) ??
+    swingPhases[0];
+
+  const selectedFinding = selectedPhase.coaching.findingId
+    ? swingFindings.find(
+        (finding) => finding.id === selectedPhase.coaching.findingId,
+      )
+    : undefined;
 
   return (
     <main className="min-h-screen bg-canvas text-copy">
@@ -84,6 +94,7 @@ function AnalysisPage() {
 
               <div className="mt-5 flex flex-wrap gap-x-6 gap-y-3 text-sm text-copy-muted">
                 <span>{analysisSummary.club}</span>
+
                 <span>{analysisSummary.cameraAngle}</span>
 
                 <span className="inline-flex items-center gap-2">
@@ -92,7 +103,7 @@ function AnalysisPage() {
                 </span>
 
                 <span className="text-copy-subtle">
-                  Analysis ID: {swingId ?? "demo-swing"}
+                  Analysis ID: {swingId ?? analysisSummary.id}
                 </span>
               </div>
             </div>
@@ -119,7 +130,8 @@ function AnalysisPage() {
                   </p>
 
                   <p className="mt-1 text-sm text-copy-subtle">
-                    Impact position selected
+                    {selectedPhase.label} position selected ·{" "}
+                    {selectedPhase.timestamp}
                   </p>
                 </div>
 
@@ -129,57 +141,70 @@ function AnalysisPage() {
               <div className="relative aspect-video overflow-hidden bg-[radial-gradient(circle_at_center,_#173222_0%,_#0a130f_62%,_#050a07_100%)]">
                 <div className="absolute inset-8 rounded-panel border border-white/8 bg-black/10" />
 
-                <div className="absolute left-[48%] top-[16%] size-10 rounded-full border-2 border-lime-soft shadow-[0_0_24px_rgba(132,255,77,0.55)]" />
+                <SwingPoseOverlay
+                  variant={selectedPhase.coaching.poseVariant}
+                />
 
-                <div className="absolute left-[49%] top-[25%] h-[45%] w-[3px] -rotate-6 bg-lime-soft shadow-[0_0_18px_rgba(132,255,77,0.5)]" />
-
-                <div className="absolute left-[38%] top-[36%] h-[3px] w-[24%] rotate-12 bg-lime-soft shadow-[0_0_18px_rgba(132,255,77,0.5)]" />
-
-                <div className="absolute left-[42%] top-[67%] h-[24%] w-[3px] rotate-12 bg-lime-soft shadow-[0_0_18px_rgba(132,255,77,0.5)]" />
-
-                <div className="absolute left-[54%] top-[67%] h-[24%] w-[3px] -rotate-12 bg-lime-soft shadow-[0_0_18px_rgba(132,255,77,0.5)]" />
+                <PhaseCoachPanel
+                  phase={selectedPhase}
+                  finding={selectedFinding}
+                />
 
                 <button
                   aria-label="Play analyzed swing"
-                  className="absolute left-1/2 top-1/2 flex size-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white backdrop-blur transition hover:scale-105 hover:bg-black/60"
+                  className="absolute left-1/2 top-1/2 z-10 flex size-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white backdrop-blur transition hover:scale-105 hover:bg-black/60"
                   type="button"
                 >
                   <Play fill="currentColor" size={28} />
                 </button>
 
-                <div className="absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-black/45 p-4 backdrop-blur">
+                <div className="absolute bottom-5 left-5 right-5 z-10 rounded-2xl border border-white/10 bg-black/45 p-4 backdrop-blur">
                   <div className="grid grid-cols-3 gap-4 sm:grid-cols-6">
-                    {swingPhases.map((phase) => (
-                      <button
-                        key={phase.id}
-                        className="group flex flex-col items-center gap-2 text-center"
-                        type="button"
-                      >
-                        <span
-                          className={[
-                            "size-2.5 rounded-full transition",
-                            phase.status === "active"
-                              ? "bg-lime-soft shadow-[0_0_12px_rgba(132,255,77,0.7)]"
-                              : "bg-copy-subtle group-hover:bg-white",
-                          ].join(" ")}
-                        />
+                    {swingPhases.map((phase) => {
+                      const isSelected = phase.id === selectedPhase.id;
 
-                        <span
-                          className={[
-                            "text-[10px] font-semibold uppercase tracking-[0.16em]",
-                            phase.status === "active"
-                              ? "text-lime-soft"
-                              : "text-copy-subtle group-hover:text-white",
-                          ].join(" ")}
+                      return (
+                        <button
+                          key={phase.id}
+                          aria-label={`View ${phase.label} phase`}
+                          aria-pressed={isSelected}
+                          className="group flex flex-col items-center gap-2 text-center"
+                          type="button"
+                          onClick={() => setSelectedPhaseId(phase.id)}
                         >
-                          {phase.label}
-                        </span>
+                          <span
+                            className={[
+                              "size-2.5 rounded-full transition",
+                              isSelected
+                                ? "scale-125 bg-lime-soft shadow-[0_0_12px_rgba(132,255,77,0.7)]"
+                                : "bg-copy-subtle group-hover:bg-white",
+                            ].join(" ")}
+                          />
 
-                        <span className="text-[10px] text-copy-subtle">
-                          {phase.timestamp}
-                        </span>
-                      </button>
-                    ))}
+                          <span
+                            className={[
+                              "text-[10px] font-semibold uppercase tracking-[0.16em] transition",
+                              isSelected
+                                ? "text-lime-soft"
+                                : "text-copy-subtle group-hover:text-white",
+                            ].join(" ")}
+                          >
+                            {phase.label}
+                          </span>
+
+                          <span
+                            className={[
+                              "text-[10px] transition",
+                              isSelected
+                                ? "text-white"
+                                : "text-copy-subtle",
+                            ].join(" ")}
+                          >
+                            {phase.timestamp}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -286,57 +311,82 @@ function AnalysisPage() {
                 </div>
 
                 <div className="space-y-4">
-                  {swingFindings.map((finding) => (
-                    <Panel key={finding.id} padding="lg" variant="raised">
-                      <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                        <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-lime-soft/10 font-display text-lg font-semibold text-lime-soft">
-                          {finding.priority}
-                        </div>
+                  {swingFindings.map((finding) => {
+                    const isSelectedFinding =
+                      selectedFinding?.id === finding.id;
 
-                        <div className="flex-1">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <h3 className="font-display text-2xl font-semibold text-white">
-                              {finding.title}
-                            </h3>
-
-                            <Badge variant={severityVariant[finding.severity]}>
-                              {finding.severity} priority
-                            </Badge>
+                    return (
+                      <Panel
+                        key={finding.id}
+                        className={[
+                          "transition",
+                          isSelectedFinding
+                            ? "ring-1 ring-lime-soft/50"
+                            : "",
+                        ].join(" ")}
+                        padding="lg"
+                        variant="raised"
+                      >
+                        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+                          <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-lime-soft/10 font-display text-lg font-semibold text-lime-soft">
+                            {finding.priority}
                           </div>
 
-                          <p className="mt-2 text-sm font-medium text-ice">
-                            {finding.phase} phase
-                          </p>
+                          <div className="flex-1">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <h3 className="font-display text-2xl font-semibold text-white">
+                                {finding.title}
+                              </h3>
 
-                          <p className="mt-5 leading-7 text-copy-muted">
-                            {finding.explanation}
-                          </p>
+                              <Badge
+                                variant={
+                                  severityVariant[finding.severity]
+                                }
+                              >
+                                {finding.severity} priority
+                              </Badge>
 
-                          <div className="mt-6 grid gap-5 border-t border-white/10 pt-6 md:grid-cols-2">
-                            <div>
-                              <p className="text-sm font-semibold text-white">
-                                Supporting evidence
-                              </p>
-
-                              <p className="mt-2 text-sm leading-6 text-copy-muted">
-                                {finding.evidence}
-                              </p>
+                              {isSelectedFinding && (
+                                <Badge variant="success">
+                                  Selected phase
+                                </Badge>
+                              )}
                             </div>
 
-                            <div>
-                              <p className="text-sm font-semibold text-white">
-                                {finding.drill.name}
-                              </p>
+                            <p className="mt-2 text-sm font-medium text-ice">
+                              {finding.phase} phase
+                            </p>
 
-                              <p className="mt-2 text-sm leading-6 text-copy-muted">
-                                {finding.drill.instructions}
-                              </p>
+                            <p className="mt-5 leading-7 text-copy-muted">
+                              {finding.explanation}
+                            </p>
+
+                            <div className="mt-6 grid gap-5 border-t border-white/10 pt-6 md:grid-cols-2">
+                              <div>
+                                <p className="text-sm font-semibold text-white">
+                                  Supporting evidence
+                                </p>
+
+                                <p className="mt-2 text-sm leading-6 text-copy-muted">
+                                  {finding.evidence}
+                                </p>
+                              </div>
+
+                              <div>
+                                <p className="text-sm font-semibold text-white">
+                                  {finding.drill.name}
+                                </p>
+
+                                <p className="mt-2 text-sm leading-6 text-copy-muted">
+                                  {finding.drill.instructions}
+                                </p>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    </Panel>
-                  ))}
+                      </Panel>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -401,9 +451,9 @@ function AnalysisPage() {
                 </p>
 
                 <p className="mt-4 text-sm leading-7 text-copy-muted">
-                  Results depend on camera placement, lighting, video quality,
-                  pose-detection confidence, and the visibility of your full
-                  body throughout the recording.
+                  Results depend on camera placement, lighting, video
+                  quality, pose-detection confidence, and the visibility of
+                  your full body throughout the recording.
                 </p>
               </Panel>
             </div>
