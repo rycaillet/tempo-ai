@@ -32,3 +32,22 @@ export async function getAnalyses() {
     },
   });
 }
+
+export async function completeAnalysis(id: string) {
+  return prisma.analysis.update({
+    where: {
+      id,
+    },
+    data: {
+      status: "COMPLETED",
+      swingScore: 87,
+      tempoRatio: 2.92,
+      backswingSeconds: 0.73,
+      downswingSeconds: 0.25,
+      consistencyScore: 82,
+      primaryFinding: "Early hip rotation during the downswing",
+      recommendation:
+        "Keep your chest closed slightly longer while starting the downswing from the lower body.",
+    },
+  });
+}

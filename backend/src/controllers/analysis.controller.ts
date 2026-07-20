@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
+import { startAnalysisProcessing } from "../services/analysis-processing.service.js";
 
 import {
   createAnalysis,
@@ -21,6 +22,8 @@ export async function createAnalysisHandler(
   try {
     const input = createAnalysisSchema.parse(request.body);
     const analysis = await createAnalysis(input);
+
+    startAnalysisProcessing(analysis.id);
 
     response.status(201).json({
       analysis,

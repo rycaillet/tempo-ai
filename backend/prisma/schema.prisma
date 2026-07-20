@@ -23,6 +23,14 @@ model Analysis {
   fileSizeBytes    Int?
   failureReason    String?
 
+  swingScore       Int?
+  tempoRatio       Float?
+  backswingSeconds Float?
+  downswingSeconds Float?
+  consistencyScore Int?
+  primaryFinding   String?
+  recommendation   String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
