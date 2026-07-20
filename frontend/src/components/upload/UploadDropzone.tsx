@@ -1,20 +1,32 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import {
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import {
   CheckCircle2,
   FileVideo2,
+  LoaderCircle,
   RotateCcw,
   UploadCloud,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { createAnalysis } from "../../services/analysisService";
 import Button from "../ui/Button";
 import Panel from "../ui/Panel";
 
-const allowedVideoTypes = ["video/mp4", "video/quicktime", "video/webm"];
+const allowedVideoTypes = [
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+];
+
 const maximumFileSize = 250 * 1024 * 1024;
 
 function formatFileSize(bytes: number) {
   const megabytes = bytes / (1024 * 1024);
+
   return `${megabytes.toFixed(1)} MB`;
 }
 
@@ -22,10 +34,16 @@ function UploadDropzone() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] =
+    useState<File | null>(null);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function openFilePicker() {
+    if (isSubmitting) {
+      return;
+    }
+
     fileInputRef.current?.click();
   }
 
@@ -40,14 +58,18 @@ function UploadDropzone() {
 
     if (file.size > maximumFileSize) {
       setSelectedFile(null);
-      setError("The selected video must be smaller than 250 MB.");
+      setError(
+        "The selected video must be smaller than 250 MB.",
+      );
       return;
     }
 
     setSelectedFile(file);
   }
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
     const file = event.target.files?.[0];
 
     if (file) {
@@ -56,6 +78,10 @@ function UploadDropzone() {
   }
 
   function removeSelectedFile() {
+    if (isSubmitting) {
+      return;
+    }
+
     setSelectedFile(null);
     setError("");
 
@@ -64,13 +90,38 @@ function UploadDropzone() {
     }
   }
 
-  function startAnalysis() {
+  async function startAnalysis() {
     if (!selectedFile) {
-      setError("Select a golf swing video before starting the analysis.");
+      setError(
+        "Select a golf swing video before starting the analysis.",
+      );
       return;
     }
 
-    navigate("/analysis/processing");
+    if (isSubmitting) {
+      return;
+    }
+
+    try {
+      setError("");
+      setIsSubmitting(true);
+
+      const analysis = await createAnalysis(selectedFile);
+
+      navigate(
+        `/analysis/processing?analysisId=${encodeURIComponent(
+          analysis.id,
+        )}`,
+      );
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : "TempoAI could not start the analysis.";
+
+      setError(message);
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -97,11 +148,15 @@ function UploadDropzone() {
           </h2>
 
           <p className="mt-3 max-w-md leading-7 text-copy-muted">
-            Upload one golf swing and TempoAI will analyze your mechanics,
-            tempo, posture, and movement patterns.
+            Upload one golf swing and TempoAI will analyze your
+            mechanics, tempo, posture, and movement patterns.
           </p>
 
-          <Button className="mt-10" onClick={openFilePicker} size="lg">
+          <Button
+            className="mt-10"
+            onClick={openFilePicker}
+            size="lg"
+          >
             Choose video
           </Button>
 
@@ -160,9 +215,21 @@ function UploadDropzone() {
 
               <Button
                 className="flex-1"
-                onClick={startAnalysis}
+                onClick={() => {
+                  void startAnalysis();
+                }}
               >
-                Analyze swing
+                {isSubmitting ? (
+                  <>
+                    <LoaderCircle
+                      className="animate-spin"
+                      size={18}
+                    />
+                    Starting analysis
+                  </>
+                ) : (
+                  "Analyze swing"
+                )}
               </Button>
             </div>
           </div>
