@@ -16,10 +16,14 @@ import { createAnalysis } from "../../services/analysisService";
 import Button from "../ui/Button";
 import Panel from "../ui/Panel";
 
+const allowedVideoExtensions = [".mp4", ".mov", ".webm"];
+
 const allowedVideoTypes = [
   "video/mp4",
   "video/quicktime",
+  "video/x-quicktime",
   "video/webm",
+  "application/octet-stream",
 ];
 
 const maximumFileSize = 250 * 1024 * 1024;
@@ -28,6 +32,27 @@ function formatFileSize(bytes: number) {
   const megabytes = bytes / (1024 * 1024);
 
   return `${megabytes.toFixed(1)} MB`;
+}
+
+function getFileExtension(filename: string) {
+  const finalDotIndex = filename.lastIndexOf(".");
+
+  if (finalDotIndex === -1) {
+    return "";
+  }
+
+  return filename.slice(finalDotIndex).toLowerCase();
+}
+
+function isAllowedVideo(file: File) {
+  const extension = getFileExtension(file.name);
+  const hasAllowedExtension =
+    allowedVideoExtensions.includes(extension);
+
+  const hasAllowedMimeType =
+    file.type === "" || allowedVideoTypes.includes(file.type);
+
+  return hasAllowedExtension && hasAllowedMimeType;
 }
 
 function UploadDropzone() {
@@ -50,7 +75,7 @@ function UploadDropzone() {
   function validateAndSelectFile(file: File) {
     setError("");
 
-    if (!allowedVideoTypes.includes(file.type)) {
+    if (!isAllowedVideo(file)) {
       setSelectedFile(null);
       setError("Choose an MP4, MOV, or WEBM video.");
       return;
@@ -133,6 +158,7 @@ function UploadDropzone() {
         ref={fileInputRef}
         accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm"
         className="hidden"
+        disabled={isSubmitting}
         onChange={handleFileChange}
         type="file"
       />
@@ -196,7 +222,8 @@ function UploadDropzone() {
 
               <button
                 aria-label="Choose a different video"
-                className="rounded-full p-2 text-copy-muted transition hover:bg-white/5 hover:text-white"
+                className="rounded-full p-2 text-copy-muted transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={isSubmitting}
                 onClick={removeSelectedFile}
                 type="button"
               >
@@ -207,6 +234,7 @@ function UploadDropzone() {
             <div className="mt-8 flex w-full flex-col gap-3 sm:flex-row">
               <Button
                 className="flex-1"
+                disabled={isSubmitting}
                 onClick={openFilePicker}
                 variant="secondary"
               >
@@ -215,6 +243,7 @@ function UploadDropzone() {
 
               <Button
                 className="flex-1"
+                disabled={isSubmitting}
                 onClick={() => {
                   void startAnalysis();
                 }}
@@ -225,7 +254,7 @@ function UploadDropzone() {
                       className="animate-spin"
                       size={18}
                     />
-                    Starting analysis
+                    Uploading video
                   </>
                 ) : (
                   "Analyze swing"

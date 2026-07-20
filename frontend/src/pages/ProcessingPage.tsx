@@ -56,6 +56,9 @@ function ProcessingPage() {
   const [searchParams] = useSearchParams();
 
   const analysisId = searchParams.get("analysisId");
+  const missingAnalysisIdError = analysisId
+    ? ""
+    : "No analysis ID was provided.";
 
   const [activeStep, setActiveStep] = useState(0);
   const [error, setError] = useState("");
@@ -63,16 +66,19 @@ function ProcessingPage() {
 
   useEffect(() => {
     if (!analysisId) {
-      setError("No analysis ID was provided.");
       return;
     }
+
+    const currentAnalysisId = analysisId;
 
     let isCancelled = false;
     let timeoutId: number | undefined;
 
     async function pollAnalysis() {
       try {
-        const analysis = await getAnalysisRecord(analysisId);
+        const analysis = await getAnalysisRecord(
+          currentAnalysisId,
+        );
 
         if (isCancelled) {
           return;
@@ -135,6 +141,8 @@ function ProcessingPage() {
     };
   }, [analysisId, navigate]);
 
+  const displayedError = missingAnalysisIdError || error;
+
   const steps = useMemo<ProcessingStep[]>(
     () =>
       processingSequence.map((step, index) => ({
@@ -168,7 +176,7 @@ function ProcessingPage() {
         <Container size="narrow">
           <div className="text-center">
             <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-lime-soft/10 text-lime-soft shadow-lime">
-              {error ? (
+              {displayedError ? (
                 <CircleAlert size={30} />
               ) : isComplete ? (
                 <Sparkles size={30} />
@@ -181,7 +189,7 @@ function ProcessingPage() {
             </div>
 
             <p className="mt-8 text-sm font-semibold uppercase tracking-[0.24em] text-lime-soft">
-              {error
+              {displayedError
                 ? "Analysis interrupted"
                 : isComplete
                   ? "Analysis complete"
@@ -189,7 +197,7 @@ function ProcessingPage() {
             </p>
 
             <h1 className="mt-4 font-display text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl">
-              {error
+              {displayedError
                 ? "We could not finish your analysis."
                 : isComplete
                   ? "Your swing analysis is ready."
@@ -197,8 +205,8 @@ function ProcessingPage() {
             </h1>
 
             <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-copy-muted">
-              {error
-                ? error
+              {displayedError
+                ? displayedError
                 : isComplete
                   ? "Opening your swing report now."
                   : "TempoAI is processing your recording and building a structured performance report."}
@@ -217,7 +225,9 @@ function ProcessingPage() {
                 </span>
 
                 <span className="font-semibold text-lime-soft">
-                  {error ? "Stopped" : `${progress}%`}
+                  {displayedError
+                    ? "Stopped"
+                    : `${progress}%`}
                 </span>
               </div>
 
@@ -225,7 +235,7 @@ function ProcessingPage() {
                 <div
                   className="h-full rounded-full bg-lime-soft shadow-lime transition-all duration-700"
                   style={{
-                    width: `${error ? progress : progress}%`,
+                    width: `${progress}%`,
                   }}
                 />
               </div>
@@ -233,7 +243,7 @@ function ProcessingPage() {
 
             <ProcessingSteps steps={steps} />
 
-            {error && (
+            {displayedError && (
               <div className="mt-8 border-t border-white/10 pt-8">
                 <Button
                   className="w-full"

@@ -33,14 +33,18 @@ type AnalysisResponse = {
   analysis: AnalysisRecord;
 };
 
-type CreateAnalysisInput = {
-  originalFilename: string;
-  mimeType?: string;
-  fileSizeBytes?: number;
-};
+async function parseResponse<T extends object>(response: Response): Promise<T> {
+  let data: T | { message?: string };
 
-async function parseResponse<T>(response: Response): Promise<T> {
-  const data = (await response.json()) as T | { message?: string };
+  try {
+    data = (await response.json()) as T | { message?: string };
+  } catch {
+    throw new Error(
+      response.ok
+        ? "TempoAI received an invalid server response."
+        : "TempoAI could not complete the request.",
+    );
+  }
 
   if (!response.ok) {
     const message =
@@ -57,18 +61,13 @@ async function parseResponse<T>(response: Response): Promise<T> {
 export async function createAnalysis(
   file: File,
 ): Promise<AnalysisRecord> {
-  const input: CreateAnalysisInput = {
-    originalFilename: file.name,
-    mimeType: file.type || undefined,
-    fileSizeBytes: file.size,
-  };
+  const formData = new FormData();
+
+  formData.append("video", file);
 
   const response = await fetch(`${apiBaseUrl}/analyses`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
+    body: formData,
   });
 
   const data = await parseResponse<AnalysisResponse>(response);
