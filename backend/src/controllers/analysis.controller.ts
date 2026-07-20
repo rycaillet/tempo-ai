@@ -1,27 +1,51 @@
-import type { NextFunction, Request, Response } from "express";
-import { z } from "zod";
-import { startAnalysisProcessing } from "../services/analysis-processing.service.js";
+import { unlink } from "node:fs/promises";
 
+import type {
+  NextFunction,
+  Request,
+  Response,
+} from "express";
+
+import { startAnalysisProcessing } from "../services/analysis-processing.service.js";
 import {
   createAnalysis,
   getAnalyses,
   getAnalysisById,
 } from "../services/analysis.service.js";
 
-const createAnalysisSchema = z.object({
-  originalFilename: z.string().trim().min(1),
-  mimeType: z.string().trim().optional(),
-  fileSizeBytes: z.number().int().nonnegative().optional(),
-});
+async function removeUploadedFile(filePath: string) {
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    console.error(
+      `Unable to remove uploaded file at ${filePath}:`,
+      error,
+    );
+  }
+}
 
 export async function createAnalysisHandler(
   request: Request,
   response: Response,
   next: NextFunction,
 ) {
+  const uploadedFile = request.file;
+
+  if (!uploadedFile) {
+    response.status(400).json({
+      message: "Select a golf swing video to upload.",
+    });
+
+    return;
+  }
+
   try {
-    const input = createAnalysisSchema.parse(request.body);
-    const analysis = await createAnalysis(input);
+    const analysis = await createAnalysis({
+      originalFilename: uploadedFile.originalname,
+      storedFilename: uploadedFile.filename,
+      mimeType: uploadedFile.mimetype,
+      fileSizeBytes: uploadedFile.size,
+    });
 
     startAnalysisProcessing(analysis.id);
 
@@ -29,6 +53,7 @@ export async function createAnalysisHandler(
       analysis,
     });
   } catch (error) {
+    await removeUploadedFile(uploadedFile.path);
     next(error);
   }
 }
@@ -41,7 +66,10 @@ export async function getAnalysisHandler(
   try {
     const analysisId = request.params.id;
 
-    if (typeof analysisId !== "string" || analysisId.trim().length === 0) {
+    if (
+      typeof analysisId !== "string" ||
+      analysisId.trim().length === 0
+    ) {
       response.status(400).json({
         message: "A valid analysis ID is required.",
       });

@@ -2,14 +2,18 @@ import { prisma } from "../lib/prisma.js";
 
 type CreateAnalysisInput = {
   originalFilename: string;
-  mimeType?: string;
-  fileSizeBytes?: number;
+  storedFilename: string;
+  mimeType: string;
+  fileSizeBytes: number;
 };
 
-export async function createAnalysis(input: CreateAnalysisInput) {
+export async function createAnalysis(
+  input: CreateAnalysisInput,
+) {
   return prisma.analysis.create({
     data: {
       originalFilename: input.originalFilename,
+      storedFilename: input.storedFilename,
       mimeType: input.mimeType,
       fileSizeBytes: input.fileSizeBytes,
       status: "PROCESSING",
@@ -45,7 +49,8 @@ export async function completeAnalysis(id: string) {
       backswingSeconds: 0.73,
       downswingSeconds: 0.25,
       consistencyScore: 82,
-      primaryFinding: "Early hip rotation during the downswing",
+      primaryFinding:
+        "Early hip rotation during the downswing",
       recommendation:
         "Keep your chest closed slightly longer while starting the downswing from the lower body.",
     },
