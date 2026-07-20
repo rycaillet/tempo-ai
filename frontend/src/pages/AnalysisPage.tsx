@@ -19,13 +19,7 @@ import Container from "../components/ui/Container";
 import Panel from "../components/ui/Panel";
 import ScoreRing from "../components/ui/ScoreRing";
 import Section from "../components/ui/Section";
-import {
-  analysisSummary,
-  practicePlan,
-  swingFindings,
-  swingMetrics,
-  swingPhases,
-} from "../data/analysis";
+import { demoAnalysis } from "../data/analysis";
 
 const severityVariant = {
   High: "warning",
@@ -35,6 +29,14 @@ const severityVariant = {
 
 function AnalysisPage() {
   const { swingId } = useParams();
+
+  const {
+    summary: analysisSummary,
+    phases: swingPhases,
+    metrics: swingMetrics,
+    findings: swingFindings,
+    practicePlan,
+  } = demoAnalysis;
 
   return (
     <main className="min-h-screen bg-canvas text-copy">
