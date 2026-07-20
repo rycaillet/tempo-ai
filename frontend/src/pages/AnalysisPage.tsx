@@ -19,7 +19,11 @@ import Container from "../components/ui/Container";
 import Panel from "../components/ui/Panel";
 import ScoreRing from "../components/ui/ScoreRing";
 import Section from "../components/ui/Section";
-import { demoAnalysis } from "../data/analysis";
+import { useEffect, useState } from "react";
+
+import { getAnalysis } from "../services/analysisService";
+import type { SwingAnalysis } from "../types/analysis";
+import AnalysisSkeleton from "../components/analysis/AnalysisSkeleton";
 
 const severityVariant = {
   High: "warning",
@@ -30,13 +34,31 @@ const severityVariant = {
 function AnalysisPage() {
   const { swingId } = useParams();
 
+  const [analysis, setAnalysis] = useState<SwingAnalysis | null>(null);
+
+  useEffect(() => {
+    async function loadAnalysis() {
+      const result = await getAnalysis(
+        swingId ?? "demo-swing",
+      );
+
+      setAnalysis(result);
+    }
+
+    loadAnalysis();
+  }, [swingId]);
+
+  if (!analysis) {
+    return <AnalysisSkeleton />;
+  }
+
   const {
     summary: analysisSummary,
     phases: swingPhases,
     metrics: swingMetrics,
     findings: swingFindings,
     practicePlan,
-  } = demoAnalysis;
+  } = analysis;
 
   return (
     <main className="min-h-screen bg-canvas text-copy">
