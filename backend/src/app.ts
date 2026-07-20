@@ -20,6 +20,20 @@ app.use(
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+
+  res.on("finish", () => {
+    const duration = Date.now() - startedAt;
+
+    console.log(
+      `${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`,
+    );
+  });
+
+  next();
+});
+
 app.get("/", (_request, response) => {
   response.status(200).json({
     message: "TempoAI API",

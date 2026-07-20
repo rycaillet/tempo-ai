@@ -33,11 +33,19 @@ type AnalysisResponse = {
   analysis: AnalysisRecord;
 };
 
-async function parseResponse<T extends object>(response: Response): Promise<T> {
+type AnalysesResponse = {
+  analyses: AnalysisRecord[];
+};
+
+async function parseResponse<T extends object>(
+  response: Response,
+): Promise<T> {
   let data: T | { message?: string };
 
   try {
-    data = (await response.json()) as T | { message?: string };
+    data = (await response.json()) as T | {
+      message?: string;
+    };
   } catch {
     throw new Error(
       response.ok
@@ -70,7 +78,8 @@ export async function createAnalysis(
     body: formData,
   });
 
-  const data = await parseResponse<AnalysisResponse>(response);
+  const data =
+    await parseResponse<AnalysisResponse>(response);
 
   return data.analysis;
 }
@@ -79,12 +88,31 @@ export async function getAnalysisRecord(
   analysisId: string,
 ): Promise<AnalysisRecord> {
   const response = await fetch(
-    `${apiBaseUrl}/analyses/${encodeURIComponent(analysisId)}`,
+    `${apiBaseUrl}/analyses/${encodeURIComponent(
+      analysisId,
+    )}`,
+    {
+      cache: "no-store",
+    },
   );
 
-  const data = await parseResponse<AnalysisResponse>(response);
+  const data =
+    await parseResponse<AnalysisResponse>(response);
 
   return data.analysis;
+}
+
+export async function getAnalysisRecords(): Promise<
+  AnalysisRecord[]
+> {
+  const response = await fetch(`${apiBaseUrl}/analyses`, {
+    cache: "no-store",
+  });
+
+  const data =
+    await parseResponse<AnalysesResponse>(response);
+
+  return data.analyses;
 }
 
 function formatAnalysisDate(dateValue: string) {
@@ -102,8 +130,14 @@ function formatAnalysisDate(dateValue: string) {
 }
 
 function createAnalysisTitle(filename: string) {
-  const withoutExtension = filename.replace(/\.[^/.]+$/, "");
-  const cleanedName = withoutExtension.replace(/[-_]+/g, " ").trim();
+  const withoutExtension = filename.replace(
+    /\.[^/.]+$/,
+    "",
+  );
+
+  const cleanedName = withoutExtension
+    .replace(/[-_]+/g, " ")
+    .trim();
 
   if (!cleanedName) {
     return demoAnalysis.summary.title;
@@ -117,40 +151,51 @@ function createAnalysisTitle(filename: string) {
 function mapBackendAnalysis(
   record: AnalysisRecord,
 ): SwingAnalysis {
-  const mappedMetrics = demoAnalysis.metrics.map((metric) => {
-    const searchableName = `${metric.id} ${metric.label}`.toLowerCase();
+  const mappedMetrics = demoAnalysis.metrics.map(
+    (metric) => {
+      const searchableName =
+        `${metric.id} ${metric.label}`.toLowerCase();
 
-    if (
-      searchableName.includes("consistency") &&
-      record.consistencyScore !== null
-    ) {
-      return {
-        ...metric,
-        score: record.consistencyScore,
-      };
-    }
+      if (
+        searchableName.includes("consistency") &&
+        record.consistencyScore !== null
+      ) {
+        return {
+          ...metric,
+          score: record.consistencyScore,
+        };
+      }
 
-    if (
-      searchableName.includes("tempo") &&
-      record.tempoRatio !== null
-    ) {
-      const tempoDifference = Math.abs(3 - record.tempoRatio);
-      const tempoScore = Math.max(
-        0,
-        Math.min(100, Math.round(100 - tempoDifference * 35)),
-      );
+      if (
+        searchableName.includes("tempo") &&
+        record.tempoRatio !== null
+      ) {
+        const tempoDifference = Math.abs(
+          3 - record.tempoRatio,
+        );
 
-      return {
-        ...metric,
-        score: tempoScore,
-        description: `${record.tempoRatio.toFixed(
-          2,
-        )}:1 backswing-to-downswing tempo ratio.`,
-      };
-    }
+        const tempoScore = Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round(
+              100 - tempoDifference * 35,
+            ),
+          ),
+        );
 
-    return metric;
-  });
+        return {
+          ...metric,
+          score: tempoScore,
+          description: `${record.tempoRatio.toFixed(
+            2,
+          )}:1 backswing-to-downswing tempo ratio.`,
+        };
+      }
+
+      return metric;
+    },
+  );
 
   const mappedFindings = demoAnalysis.findings.map(
     (finding, index) => {
@@ -160,9 +205,11 @@ function mapBackendAnalysis(
 
       return {
         ...finding,
-        title: record.primaryFinding ?? finding.title,
+        title:
+          record.primaryFinding ?? finding.title,
         explanation:
-          record.recommendation ?? finding.explanation,
+          record.recommendation ??
+          finding.explanation,
       };
     },
   );
@@ -171,7 +218,9 @@ function mapBackendAnalysis(
     record.primaryFinding,
     record.recommendation,
   ]
-    .filter((value): value is string => Boolean(value))
+    .filter(
+      (value): value is string => Boolean(value),
+    )
     .join(" ");
 
   return {
@@ -179,11 +228,16 @@ function mapBackendAnalysis(
     summary: {
       ...demoAnalysis.summary,
       id: record.id,
-      title: createAnalysisTitle(record.originalFilename),
+      title: createAnalysisTitle(
+        record.originalFilename,
+      ),
       date: formatAnalysisDate(record.createdAt),
       overallScore:
-        record.swingScore ?? demoAnalysis.summary.overallScore,
-      summary: coachingSummary || demoAnalysis.summary.summary,
+        record.swingScore ??
+        demoAnalysis.summary.overallScore,
+      summary:
+        coachingSummary ||
+        demoAnalysis.summary.summary,
       strength:
         record.consistencyScore !== null
           ? `Your swing consistency scored ${record.consistencyScore} out of 100.`
@@ -197,16 +251,20 @@ function mapBackendAnalysis(
 export async function getAnalysis(
   analysisId: string,
 ): Promise<SwingAnalysis> {
-  const record = await getAnalysisRecord(analysisId);
+  const record =
+    await getAnalysisRecord(analysisId);
 
   if (record.status === "FAILED") {
     throw new Error(
-      record.failureReason ?? "The swing analysis failed.",
+      record.failureReason ??
+        "The swing analysis failed.",
     );
   }
 
   if (record.status !== "COMPLETED") {
-    throw new Error("The swing analysis is not complete yet.");
+    throw new Error(
+      "The swing analysis is not complete yet.",
+    );
   }
 
   return mapBackendAnalysis(record);
