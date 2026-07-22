@@ -53,6 +53,8 @@ export type AnalysisSummary = {
 
 export type SwingAnalysis = {
   summary: AnalysisSummary;
+  videoUrl: string | null;
+  videoMimeType: string | null;
   phases: SwingPhase[];
   metrics: SwingMetric[];
   findings: SwingFinding[];

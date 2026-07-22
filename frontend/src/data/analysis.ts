@@ -1,6 +1,9 @@
 import type { SwingAnalysis } from "../types/analysis";
 
 export const demoAnalysis: SwingAnalysis = {
+  videoUrl: null,
+  videoMimeType: null,
+
   summary: {
     id: "demo-swing",
     title: "Range Session",

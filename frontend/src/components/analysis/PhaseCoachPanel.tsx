@@ -16,31 +16,31 @@ function PhaseCoachPanel({
   finding,
 }: PhaseCoachPanelProps) {
   return (
-    <div className="absolute left-5 top-5 z-10 max-w-sm rounded-2xl border border-white/10 bg-black/55 p-4 shadow-xl backdrop-blur-md">
-      <div className="flex items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-lime-soft/10 text-lime-soft">
-          <Bot size={20} />
+    <div className="h-full rounded-panel border border-white/10 bg-surface p-5 shadow-xl sm:p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-lime-soft/10 text-lime-soft">
+          <Bot size={21} />
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-white">
+            <p className="font-display text-lg font-semibold text-white">
               TempoAI Coach
             </p>
 
             <Badge variant="success">{phase.label}</Badge>
           </div>
 
-          <p className="mt-3 font-display text-lg font-semibold text-white">
+          <p className="mt-5 font-display text-2xl font-semibold tracking-[-0.03em] text-white">
             {phase.coaching.headline}
           </p>
 
-          <p className="mt-2 text-sm leading-6 text-copy-muted">
+          <p className="mt-3 text-sm leading-7 text-copy-muted">
             {phase.coaching.message}
           </p>
 
           {finding && (
-            <div className="mt-4 border-t border-white/10 pt-4">
+            <div className="mt-6 border-t border-white/10 pt-5">
               <div className="flex items-center gap-2 text-lime-soft">
                 <Sparkles size={15} />
 
@@ -49,10 +49,14 @@ function PhaseCoachPanel({
                 </p>
               </div>
 
-              <div className="mt-2 flex items-center gap-2 text-sm font-medium text-white">
+              <div className="mt-3 flex items-center gap-2 text-sm font-semibold text-white">
                 <span>{finding.drill.name}</span>
                 <ChevronRight size={15} />
               </div>
+
+              <p className="mt-2 text-sm leading-6 text-copy-muted">
+                {finding.drill.instructions}
+              </p>
             </div>
           )}
         </div>

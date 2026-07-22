@@ -4,6 +4,8 @@ import type { SwingAnalysis } from "../types/analysis";
 const apiBaseUrl =
   import.meta.env.VITE_API_URL ?? "http://localhost:5001/api";
 
+const apiOrigin = apiBaseUrl.replace(/\/api\/?$/, "");
+
 export type AnalysisStatus =
   | "UPLOADING"
   | "PROCESSING"
@@ -148,6 +150,18 @@ function createAnalysisTitle(filename: string) {
   );
 }
 
+function createVideoUrl(
+  storedFilename: string | null,
+): string | null {
+  if (!storedFilename) {
+    return null;
+  }
+
+  return `${apiOrigin}/uploads/analyses/${encodeURIComponent(
+    storedFilename,
+  )}`;
+}
+
 function mapBackendAnalysis(
   record: AnalysisRecord,
 ): SwingAnalysis {
@@ -225,6 +239,8 @@ function mapBackendAnalysis(
 
   return {
     ...demoAnalysis,
+    videoUrl: createVideoUrl(record.storedFilename),
+    videoMimeType: record.mimeType,
     summary: {
       ...demoAnalysis.summary,
       id: record.id,
