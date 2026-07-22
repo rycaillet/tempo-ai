@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma.js";
+import { generateAnalysisResult } from "./analysis-generator.service.js";
 
 type CreateAnalysisInput = {
   originalFilename: string;
@@ -38,21 +39,29 @@ export async function getAnalyses() {
 }
 
 export async function completeAnalysis(id: string) {
+  const generatedAnalysis = generateAnalysisResult();
+
   return prisma.analysis.update({
     where: {
       id,
     },
     data: {
       status: "COMPLETED",
-      swingScore: 87,
-      tempoRatio: 2.92,
-      backswingSeconds: 0.73,
-      downswingSeconds: 0.25,
-      consistencyScore: 82,
+
+      swingScore: generatedAnalysis.swingScore,
+      tempoRatio: generatedAnalysis.tempoRatio,
+      backswingSeconds:
+        generatedAnalysis.backswingSeconds,
+      downswingSeconds:
+        generatedAnalysis.downswingSeconds,
+      consistencyScore:
+        generatedAnalysis.consistencyScore,
       primaryFinding:
-        "Early hip rotation during the downswing",
+        generatedAnalysis.primaryFinding,
       recommendation:
-        "Keep your chest closed slightly longer while starting the downswing from the lower body.",
+        generatedAnalysis.recommendation,
+      phaseTimings:
+        generatedAnalysis.phaseTimings,
     },
   });
 }
