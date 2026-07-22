@@ -2,6 +2,23 @@ export type SwingPhaseStatus = "complete" | "active";
 
 export type FindingSeverity = "High" | "Medium" | "Low";
 
+export type PoseVariant =
+  | "address"
+  | "takeaway"
+  | "top"
+  | "downswing"
+  | "impact"
+  | "finish";
+
+export type PhaseTimings = Record<PoseVariant, number>;
+
+export type PhaseCoaching = {
+  headline: string;
+  message: string;
+  poseVariant: PoseVariant;
+  findingId?: string;
+};
+
 export type SwingPhase = {
   id: string;
   label: string;
@@ -55,23 +72,9 @@ export type SwingAnalysis = {
   summary: AnalysisSummary;
   videoUrl: string | null;
   videoMimeType: string | null;
+  phaseTimings: PhaseTimings | null;
   phases: SwingPhase[];
   metrics: SwingMetric[];
   findings: SwingFinding[];
   practicePlan: PracticePlanItem[];
-};
-
-export type PoseVariant =
-  | "address"
-  | "takeaway"
-  | "top"
-  | "downswing"
-  | "impact"
-  | "finish";
-
-export type PhaseCoaching = {
-  headline: string;
-  message: string;
-  poseVariant: PoseVariant;
-  findingId?: string;
 };

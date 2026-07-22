@@ -4,6 +4,15 @@ export const demoAnalysis: SwingAnalysis = {
   videoUrl: null,
   videoMimeType: null,
 
+  phaseTimings: {
+    address: 0,
+    takeaway: 0.33,
+    top: 0.73,
+    downswing: 0.84,
+    impact: 0.98,
+    finish: 1.63,
+  },
+
   summary: {
     id: "demo-swing",
     title: "Range Session",
