@@ -28,6 +28,8 @@ import ScoreRing from "../components/ui/ScoreRing";
 import Section from "../components/ui/Section";
 import { getAnalysis } from "../services/analysisService";
 import type {
+  PhaseTimings,
+  PoseVariant,
   SwingAnalysis,
   SwingPhase,
 } from "../types/analysis";
@@ -38,25 +40,44 @@ const severityVariant = {
   Low: "neutral",
 } as const;
 
-const phaseProgress = {
-  address: 0,
-  takeaway: 0.18,
-  top: 0.38,
-  downswing: 0.58,
-  impact: 0.72,
-  finish: 0.92,
-} as const;
+const poseVariants: PoseVariant[] = [
+  "address",
+  "takeaway",
+  "top",
+  "downswing",
+  "impact",
+  "finish",
+];
+
+function isPoseVariant(
+  value: string,
+): value is PoseVariant {
+  return poseVariants.includes(
+    value as PoseVariant,
+  );
+}
 
 function getPhaseTime(
   phaseId: string,
-  duration: number,
-) {
-  const progress =
-    phaseProgress[
-      phaseId as keyof typeof phaseProgress
-    ] ?? 0;
+  phaseTimings: PhaseTimings | null,
+): number | null {
+  if (
+    !phaseTimings ||
+    !isPoseVariant(phaseId)
+  ) {
+    return null;
+  }
 
-  return duration * progress;
+  const phaseTime = phaseTimings[phaseId];
+
+  if (
+    !Number.isFinite(phaseTime) ||
+    phaseTime < 0
+  ) {
+    return null;
+  }
+
+  return phaseTime;
 }
 
 function formatPlaybackTime(seconds: number) {
@@ -70,20 +91,19 @@ function formatPlaybackTime(seconds: number) {
 function findCurrentPhase(
   phases: SwingPhase[],
   currentTime: number,
-  duration: number,
+  phaseTimings: PhaseTimings | null,
 ) {
-  if (duration <= 0) {
-    return phases[0];
-  }
-
   return phases.reduce<SwingPhase>(
     (currentPhase, phase) => {
       const phaseTime = getPhaseTime(
         phase.id,
-        duration,
+        phaseTimings,
       );
 
-      if (phaseTime <= currentTime) {
+      if (
+        phaseTime !== null &&
+        phaseTime <= currentTime
+      ) {
         return phase;
       }
 
@@ -136,6 +156,7 @@ function AnalysisPage() {
   const {
     summary: analysisSummary,
     videoUrl,
+    phaseTimings,
     phases: swingPhases,
     metrics: swingMetrics,
     findings: swingFindings,
@@ -169,11 +190,25 @@ function AnalysisPage() {
 
     const phaseTime = getPhaseTime(
       phase.id,
-      videoDuration,
+      phaseTimings,
     );
 
-    video.currentTime = phaseTime;
-    setCurrentTime(phaseTime);
+    if (phaseTime === null) {
+      return;
+    }
+
+    const maximumSeekTime = Math.max(
+      videoDuration - 0.01,
+      0,
+    );
+
+    const seekTime = Math.min(
+      phaseTime,
+      maximumSeekTime,
+    );
+
+    video.currentTime = seekTime;
+    setCurrentTime(seekTime);
   }
 
   async function handlePlay() {
@@ -205,7 +240,7 @@ function AnalysisPage() {
     const currentPhase = findCurrentPhase(
       swingPhases,
       nextTime,
-      video.duration,
+      phaseTimings,
     );
 
     setCurrentTime(nextTime);
@@ -384,9 +419,9 @@ function AnalysisPage() {
 
               <div className="border-t border-white/10 px-5 py-5">
                 <p className="mb-4 text-xs leading-5 text-copy-subtle">
-                  Phase markers are estimated
-                  from the video duration and are
-                  provided for navigation.
+                  Phase markers come from this
+                  analysis and stay synchronized
+                  with video playback.
                 </p>
 
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -396,17 +431,15 @@ function AnalysisPage() {
                       selectedPhase.id;
 
                     const phaseTime =
-                      videoDuration > 0
-                        ? getPhaseTime(
-                            phase.id,
-                            videoDuration,
-                          )
-                        : 0;
+                      getPhaseTime(
+                        phase.id,
+                        phaseTimings,
+                      ) ?? 0;
 
                     return (
                       <button
                         key={phase.id}
-                        aria-label={`Jump to estimated ${phase.label} phase`}
+                        aria-label={`Jump to ${phase.label} phase`}
                         aria-pressed={isSelected}
                         className={[
                           "group rounded-2xl border px-3 py-3 text-center transition",

@@ -1,5 +1,9 @@
 import { demoAnalysis } from "../data/analysis";
-import type { SwingAnalysis } from "../types/analysis";
+import type {
+  PhaseTimings,
+  PoseVariant,
+  SwingAnalysis,
+} from "../types/analysis";
 
 const apiBaseUrl =
   import.meta.env.VITE_API_URL ?? "http://localhost:5001/api";
@@ -27,6 +31,7 @@ export type AnalysisRecord = {
   consistencyScore: number | null;
   primaryFinding: string | null;
   recommendation: string | null;
+  phaseTimings: unknown;
   createdAt: string;
   updatedAt: string;
 };
@@ -39,15 +44,26 @@ type AnalysesResponse = {
   analyses: AnalysisRecord[];
 };
 
+const poseVariants: PoseVariant[] = [
+  "address",
+  "takeaway",
+  "top",
+  "downswing",
+  "impact",
+  "finish",
+];
+
 async function parseResponse<T extends object>(
   response: Response,
 ): Promise<T> {
   let data: T | { message?: string };
 
   try {
-    data = (await response.json()) as T | {
-      message?: string;
-    };
+    data = (await response.json()) as
+      | T
+      | {
+          message?: string;
+        };
   } catch {
     throw new Error(
       response.ok
@@ -58,7 +74,8 @@ async function parseResponse<T extends object>(
 
   if (!response.ok) {
     const message =
-      "message" in data && typeof data.message === "string"
+      "message" in data &&
+      typeof data.message === "string"
         ? data.message
         : "The analysis request failed.";
 
@@ -162,6 +179,30 @@ function createVideoUrl(
   )}`;
 }
 
+function isPhaseTimings(
+  value: unknown,
+): value is PhaseTimings {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+
+  const timings = value as Record<string, unknown>;
+
+  return poseVariants.every((phase) => {
+    const timing = timings[phase];
+
+    return (
+      typeof timing === "number" &&
+      Number.isFinite(timing) &&
+      timing >= 0
+    );
+  });
+}
+
 function mapBackendAnalysis(
   record: AnalysisRecord,
 ): SwingAnalysis {
@@ -237,10 +278,17 @@ function mapBackendAnalysis(
     )
     .join(" ");
 
+  const phaseTimings = isPhaseTimings(
+    record.phaseTimings,
+  )
+    ? record.phaseTimings
+    : demoAnalysis.phaseTimings;
+
   return {
     ...demoAnalysis,
     videoUrl: createVideoUrl(record.storedFilename),
     videoMimeType: record.mimeType,
+    phaseTimings,
     summary: {
       ...demoAnalysis.summary,
       id: record.id,
