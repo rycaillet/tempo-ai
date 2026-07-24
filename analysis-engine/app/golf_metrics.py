@@ -728,6 +728,53 @@ def build_feedback_eligibility(
     }
 
 
+def apply_feedback_eligibility(
+    tempo_metrics: dict[str, Any],
+    feedback_eligibility: dict[str, Any],
+) -> dict[str, Any]:
+    feedback = tempo_metrics.get("feedback")
+
+    if not isinstance(feedback, dict):
+        raise ValueError(
+            "Tempo metrics are missing a feedback object."
+        )
+
+    gated_tempo_metrics = dict(tempo_metrics)
+    gated_feedback = dict(feedback)
+
+    mode = feedback_eligibility.get("mode")
+    eligibility_reason = feedback_eligibility.get("reason")
+
+    if mode == "normal":
+        gated_feedback["deliveryStatus"] = "displayed"
+        gated_feedback["disclaimer"] = None
+    elif mode == "cautious":
+        gated_feedback["deliveryStatus"] = (
+            "displayed_with_caution"
+        )
+        gated_feedback["disclaimer"] = (
+            "Phase detection confidence is limited. Treat this "
+            "tempo feedback as a preliminary observation and "
+            "review the detected phase frames before relying on it."
+        )
+    else:
+        original_status = gated_feedback.get("status")
+
+        gated_feedback["status"] = "suppressed"
+        gated_feedback["originalStatus"] = original_status
+        gated_feedback["deliveryStatus"] = "suppressed"
+        gated_feedback["message"] = None
+        gated_feedback["disclaimer"] = (
+            "Tempo coaching feedback was suppressed because "
+            "the detected swing phases did not pass validation."
+        )
+
+    gated_feedback["eligibilityReason"] = eligibility_reason
+    gated_tempo_metrics["feedback"] = gated_feedback
+
+    return gated_tempo_metrics
+
+
 def get_arm_mapping(
     handedness: Handedness,
 ) -> dict[str, str]:
@@ -1056,6 +1103,10 @@ def analyze_golf_metrics(
     phase_validation = build_phase_validation(references)
     feedback_eligibility = build_feedback_eligibility(
         phase_validation
+    )
+    tempo_metrics = apply_feedback_eligibility(
+        tempo_metrics,
+        feedback_eligibility,
     )
 
     result = {
