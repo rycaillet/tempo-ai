@@ -401,12 +401,34 @@ def build_tempo_metrics(
 
     tempo_ratio = backswing_duration / downswing_duration
 
-    if tempo_ratio < 2.5:
+    target_minimum = 2.7
+    target_maximum = 3.3
+
+    if tempo_ratio < target_minimum:
         classification = "quick"
-    elif tempo_ratio <= 3.5:
+        status = "below_target"
+        feedback = (
+            "Your downswing is fast relative to your "
+            "backswing. A slightly smoother transition or "
+            "more deliberate backswing may create a more "
+            "balanced tempo."
+        )
+    elif tempo_ratio <= target_maximum:
         classification = "balanced"
+        status = "within_target"
+        feedback = (
+            "Your backswing-to-downswing timing is within "
+            "the target range. Focus on repeating this rhythm "
+            "consistently."
+        )
     else:
         classification = "deliberate"
+        status = "above_target"
+        feedback = (
+            "Your backswing is long relative to your "
+            "downswing. A more continuous transition may help "
+            "create a more balanced tempo."
+        )
 
     required_frames_have_pose = all(
         bool(references[reference_name].get("poseDetected"))
@@ -431,6 +453,22 @@ def build_tempo_metrics(
         "ratioDisplay": f"{tempo_ratio:.2f}:1",
         "classification": classification,
         "confidence": confidence,
+        "feedback": {
+            "status": status,
+            "targetRange": {
+                "minimum": target_minimum,
+                "maximum": target_maximum,
+                "ratioDisplay": (
+                    f"{target_minimum:.1f}:1 to "
+                    f"{target_maximum:.1f}:1"
+                ),
+            },
+            "message": feedback,
+            "basis": (
+                "Heuristic target range used for prototype "
+                "swing-tempo feedback."
+            ),
+        },
         "referenceFrames": {
             "backswingStart": "addressReference",
             "backswingEnd": "topOfBackswing",
@@ -864,6 +902,9 @@ def analyze_golf_metrics(
                 "classification"
             ],
             "tempoConfidence": tempo_metrics["confidence"],
+            "tempoStatus": tempo_metrics["feedback"][
+                "status"
+            ],
         },
     }
 
