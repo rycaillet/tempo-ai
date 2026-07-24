@@ -729,34 +729,40 @@ def build_feedback_eligibility(
 
 
 def apply_feedback_eligibility(
-    tempo_metrics: dict[str, Any],
+    metrics: dict[str, Any],
     feedback_eligibility: dict[str, Any],
+    metric_name: str = "Tempo",
 ) -> dict[str, Any]:
-    feedback = tempo_metrics.get("feedback")
+    feedback = metrics.get("feedback")
 
     if not isinstance(feedback, dict):
         raise ValueError(
-            "Tempo metrics are missing a feedback object."
+            f"{metric_name} metrics are missing a feedback object."
         )
 
-    gated_tempo_metrics = dict(tempo_metrics)
+    gated_metrics = dict(metrics)
     gated_feedback = dict(feedback)
 
     mode = feedback_eligibility.get("mode")
     eligibility_reason = feedback_eligibility.get("reason")
 
+    metric_label = metric_name.lower()
+
     if mode == "normal":
         gated_feedback["deliveryStatus"] = "displayed"
         gated_feedback["disclaimer"] = None
+
     elif mode == "cautious":
         gated_feedback["deliveryStatus"] = (
             "displayed_with_caution"
         )
         gated_feedback["disclaimer"] = (
             "Phase detection confidence is limited. Treat this "
-            "tempo feedback as a preliminary observation and "
-            "review the detected phase frames before relying on it."
+            f"{metric_label} feedback as a preliminary observation "
+            "and review the detected phase frames before relying "
+            "on it."
         )
+
     else:
         original_status = gated_feedback.get("status")
 
@@ -765,14 +771,15 @@ def apply_feedback_eligibility(
         gated_feedback["deliveryStatus"] = "suppressed"
         gated_feedback["message"] = None
         gated_feedback["disclaimer"] = (
-            "Tempo coaching feedback was suppressed because "
-            "the detected swing phases did not pass validation."
+            f"{metric_name} coaching feedback was suppressed "
+            "because the detected swing phases did not pass "
+            "validation."
         )
 
     gated_feedback["eligibilityReason"] = eligibility_reason
-    gated_tempo_metrics["feedback"] = gated_feedback
+    gated_metrics["feedback"] = gated_feedback
 
-    return gated_tempo_metrics
+    return gated_metrics
 
 
 def get_arm_mapping(
@@ -1438,13 +1445,31 @@ def analyze_golf_metrics(
     )
 
     tempo_metrics = build_tempo_metrics(references)
+
+    address_posture_metrics = (
+        build_address_posture_metrics(
+            references=references,
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
+    )
+
     phase_validation = build_phase_validation(references)
+
     feedback_eligibility = build_feedback_eligibility(
         phase_validation
     )
+
     tempo_metrics = apply_feedback_eligibility(
-        tempo_metrics,
-        feedback_eligibility,
+        metrics=tempo_metrics,
+        feedback_eligibility=feedback_eligibility,
+        metric_name="Tempo",
+    )
+
+    address_posture_metrics = apply_feedback_eligibility(
+        metrics=address_posture_metrics,
+        feedback_eligibility=feedback_eligibility,
+        metric_name="Address posture",
     )
 
     result = {
@@ -1490,6 +1515,11 @@ def analyze_golf_metrics(
                 "Shoulder and hip tilt are 2D image-plane "
                 "measurements, not true 3D body rotation."
             ),
+            "addressPostureFeedback": (
+                "Address posture classifications use prototype "
+                "heuristic ranges and are not universal golf "
+                "instruction standards."
+            ),
         },
         "phaseFrames": {
             reference_name: {
@@ -1509,6 +1539,7 @@ def analyze_golf_metrics(
             "phaseValidation": phase_validation,
             "feedbackEligibility": feedback_eligibility,
             "tempo": tempo_metrics,
+            "addressPosture": address_posture_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
                 maximum_center_movements
@@ -1561,6 +1592,26 @@ def analyze_golf_metrics(
             ),
             "coachingFeedbackEligible": (
                 feedback_eligibility["eligible"]
+            ),
+            "addressPostureClassification": (
+                address_posture_metrics["classification"]
+            ),
+            "addressPostureConfidence": (
+                address_posture_metrics["confidence"]
+            ),
+            "addressPostureIssueCount": (
+                address_posture_metrics["issueCount"]
+            ),
+            "addressPosturePrimaryIssue": (
+                address_posture_metrics["primaryIssue"]
+            ),
+            "addressPostureFeedbackStatus": (
+                address_posture_metrics["feedback"]["status"]
+            ),
+            "addressPostureFeedbackDeliveryStatus": (
+                address_posture_metrics["feedback"][
+                    "deliveryStatus"
+                ]
             ),
         },
     }

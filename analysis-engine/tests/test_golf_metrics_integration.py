@@ -20,7 +20,9 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
         }
 
     @staticmethod
-    def build_geometry(frame_index: int) -> dict[str, object]:
+    def build_geometry(
+        frame_index: int,
+    ) -> dict[str, object]:
         progress = (frame_index - 65) / 52
 
         return {
@@ -39,25 +41,37 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             "spineAngle": 42.0 + (4.0 * progress),
             "shoulderTilt": 5.0 + (12.0 * progress),
             "hipTilt": 2.0 + (6.0 * progress),
-            "leftElbowAngle": 165.0 - (28.0 * progress),
-            "rightElbowAngle": 150.0 - (35.0 * progress),
+            "leftElbowAngle": (
+                165.0 - (28.0 * progress)
+            ),
+            "rightElbowAngle": (
+                150.0 - (35.0 * progress)
+            ),
         }
 
-    def build_geometry_payload(self) -> dict[str, object]:
+    def build_geometry_payload(
+        self,
+    ) -> dict[str, object]:
         frames = []
 
-        for frame_index, timestamp in self.phase_frames.values():
+        for frame_index, timestamp in (
+            self.phase_frames.values()
+        ):
             frames.append(
                 {
                     "frameIndex": frame_index,
                     "timestampSeconds": timestamp,
                     "poseDetected": True,
-                    "geometry": self.build_geometry(frame_index),
+                    "geometry": self.build_geometry(
+                        frame_index
+                    ),
                 }
             )
 
         return {
-            "sourceVideo": "fixtures/integration-swing.mp4",
+            "sourceVideo": (
+                "fixtures/integration-swing.mp4"
+            ),
             "metadata": {
                 "width": 1920,
                 "height": 1080,
@@ -68,7 +82,9 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             "frames": frames,
         }
 
-    def build_refined_phases_payload(self) -> dict[str, object]:
+    def build_refined_phases_payload(
+        self,
+    ) -> dict[str, object]:
         return {
             "phases": {
                 phase_name: {
@@ -85,7 +101,9 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
     def test_analyze_golf_metrics_writes_complete_valid_result(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
+        with tempfile.TemporaryDirectory() as (
+            temporary_directory
+        ):
             temp_path = Path(temporary_directory)
 
             geometry_path = temp_path / (
@@ -99,18 +117,24 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             )
 
             geometry_path.write_text(
-                json.dumps(self.build_geometry_payload()),
+                json.dumps(
+                    self.build_geometry_payload()
+                ),
                 encoding="utf-8",
             )
 
             refined_phases_path.write_text(
-                json.dumps(self.build_refined_phases_payload()),
+                json.dumps(
+                    self.build_refined_phases_payload()
+                ),
                 encoding="utf-8",
             )
 
             command_result = analyze_golf_metrics(
                 geometry_path=geometry_path,
-                refined_phases_path=refined_phases_path,
+                refined_phases_path=(
+                    refined_phases_path
+                ),
                 output_path=output_path,
                 handedness="right",
             )
@@ -123,19 +147,34 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
 
             result = json.loads(
-                output_path.read_text(encoding="utf-8")
+                output_path.read_text(
+                    encoding="utf-8"
+                )
             )
 
             summary = result["summary"]
             metrics = result["metrics"]
             validation = metrics["phaseValidation"]
-            eligibility = metrics["feedbackEligibility"]
+            eligibility = metrics[
+                "feedbackEligibility"
+            ]
             tempo = metrics["tempo"]
-            feedback = tempo["feedback"]
+            tempo_feedback = tempo["feedback"]
+            address_posture = metrics[
+                "addressPosture"
+            ]
+            posture_feedback = address_posture[
+                "feedback"
+            ]
 
-            self.assertEqual(summary["referenceFrameCount"], 6)
             self.assertEqual(
-                summary["availableReferenceMeasurements"],
+                summary["referenceFrameCount"],
+                6,
+            )
+            self.assertEqual(
+                summary[
+                    "availableReferenceMeasurements"
+                ],
                 48,
             )
             self.assertEqual(
@@ -143,10 +182,14 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                 48,
             )
             self.assertEqual(
-                summary["referenceMeasurementCompleteness"],
+                summary[
+                    "referenceMeasurementCompleteness"
+                ],
                 1.0,
             )
-            self.assertTrue(summary["allReferenceFramesHavePose"])
+            self.assertTrue(
+                summary["allReferenceFramesHavePose"]
+            )
             self.assertEqual(
                 summary["handednessAssumption"],
                 "right",
@@ -168,13 +211,30 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                 summary["coachingFeedbackEligible"]
             )
 
-            self.assertEqual(validation["status"], "valid")
-            self.assertEqual(validation["confidence"], 1.0)
-            self.assertEqual(validation["passedCheckCount"], 9)
-            self.assertEqual(validation["failedChecks"], [])
+            self.assertEqual(
+                validation["status"],
+                "valid",
+            )
+            self.assertEqual(
+                validation["confidence"],
+                1.0,
+            )
+            self.assertEqual(
+                validation["passedCheckCount"],
+                9,
+            )
+            self.assertEqual(
+                validation["failedChecks"],
+                [],
+            )
 
-            self.assertTrue(eligibility["eligible"])
-            self.assertEqual(eligibility["mode"], "normal")
+            self.assertTrue(
+                eligibility["eligible"]
+            )
+            self.assertEqual(
+                eligibility["mode"],
+                "normal",
+            )
             self.assertFalse(
                 eligibility["requiresDisclaimer"]
             )
@@ -191,39 +251,215 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                 tempo["backswingToDownswingRatio"],
                 2.0,
             )
-            self.assertEqual(tempo["classification"], "quick")
+            self.assertEqual(
+                tempo["classification"],
+                "quick",
+            )
 
             self.assertEqual(
-                feedback["status"],
+                tempo_feedback["status"],
                 "below_target",
             )
             self.assertEqual(
-                feedback["deliveryStatus"],
+                tempo_feedback["deliveryStatus"],
                 "displayed",
             )
-            self.assertIsNone(feedback["disclaimer"])
-            self.assertIsNotNone(feedback["message"])
+            self.assertIsNone(
+                tempo_feedback["disclaimer"]
+            )
+            self.assertIsNotNone(
+                tempo_feedback["message"]
+            )
 
             self.assertEqual(
-                result["phaseFrames"]["addressReference"][
-                    "frameIndex"
+                address_posture["classification"],
+                "neutral",
+            )
+            self.assertEqual(
+                address_posture["issueCount"],
+                0,
+            )
+            self.assertIsNone(
+                address_posture["primaryIssue"]
+            )
+            self.assertEqual(
+                address_posture["confidence"],
+                1.0,
+            )
+
+            self.assertEqual(
+                address_posture[
+                    "measurementCompleteness"
                 ],
+                {
+                    "available": 5,
+                    "total": 5,
+                    "ratio": 1.0,
+                },
+            )
+
+            measurements = address_posture[
+                "measurements"
+            ]
+
+            self.assertEqual(
+                measurements[
+                    "spineAngleDegrees"
+                ],
+                42.0,
+            )
+            self.assertEqual(
+                measurements[
+                    "shoulderTiltDegrees"
+                ],
+                5.0,
+            )
+            self.assertEqual(
+                measurements[
+                    "hipTiltDegrees"
+                ],
+                2.0,
+            )
+
+            self.assertEqual(
+                measurements[
+                    "headToHipOffset"
+                ]["deltaXNormalized"],
+                0.0,
+            )
+            self.assertEqual(
+                measurements[
+                    "shoulderToHipOffset"
+                ]["deltaXNormalized"],
+                0.0,
+            )
+
+            findings = address_posture["findings"]
+
+            self.assertEqual(
+                findings["spineAngle"]["status"],
+                "within_target",
+            )
+            self.assertEqual(
+                findings["shoulderTilt"]["status"],
+                "within_target",
+            )
+            self.assertEqual(
+                findings["hipTilt"]["status"],
+                "within_target",
+            )
+            self.assertIn(
+                findings["headPosition"]["status"],
+                {
+                    "within_target",
+                    "centered",
+                },
+            )
+            self.assertIn(
+                findings[
+                    "shoulderPosition"
+                ]["status"],
+                {
+                    "within_target",
+                    "centered",
+                },
+            )
+
+            self.assertEqual(
+                posture_feedback["status"],
+                "within_target",
+            )
+            self.assertEqual(
+                posture_feedback[
+                    "deliveryStatus"
+                ],
+                "displayed",
+            )
+            self.assertIsNone(
+                posture_feedback["disclaimer"]
+            )
+            self.assertIsNotNone(
+                posture_feedback["message"]
+            )
+            self.assertEqual(
+                posture_feedback[
+                    "eligibilityReason"
+                ],
+                eligibility["reason"],
+            )
+
+            self.assertEqual(
+                summary[
+                    "addressPostureClassification"
+                ],
+                "neutral",
+            )
+            self.assertEqual(
+                summary[
+                    "addressPostureConfidence"
+                ],
+                1.0,
+            )
+            self.assertEqual(
+                summary["addressPostureIssueCount"],
+                0,
+            )
+            self.assertIsNone(
+                summary[
+                    "addressPosturePrimaryIssue"
+                ]
+            )
+            self.assertEqual(
+                summary[
+                    "addressPostureFeedbackStatus"
+                ],
+                "within_target",
+            )
+            self.assertEqual(
+                summary[
+                    "addressPostureFeedbackDeliveryStatus"
+                ],
+                "displayed",
+            )
+
+            self.assertEqual(
+                result["phaseFrames"][
+                    "addressReference"
+                ]["frameIndex"],
                 65,
             )
             self.assertEqual(
-                result["phaseFrames"]["finishReference"][
-                    "frameIndex"
-                ],
+                result["phaseFrames"][
+                    "finishReference"
+                ]["frameIndex"],
                 117,
             )
 
-            self.assertIn("transitions", metrics)
+            self.assertIn(
+                "transitions",
+                metrics,
+            )
             self.assertIn(
                 "maximumMovementFromAddressReference",
                 metrics,
             )
-            self.assertIn("angleRanges", metrics)
-            self.assertIn("armExtension", metrics)
+            self.assertIn(
+                "angleRanges",
+                metrics,
+            )
+            self.assertIn(
+                "armExtension",
+                metrics,
+            )
+            self.assertIn(
+                "addressPosture",
+                metrics,
+            )
+
+            self.assertEqual(
+                command_result["summary"],
+                summary,
+            )
 
 
 if __name__ == "__main__":
