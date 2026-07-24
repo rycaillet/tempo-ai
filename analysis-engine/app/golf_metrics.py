@@ -6,6 +6,10 @@ import math
 from pathlib import Path
 from typing import Any, Literal
 
+from app.metrics.impact_position import (
+    build_impact_position_metrics,
+)
+
 
 Handedness = Literal["right", "left"]
 
@@ -1447,11 +1451,20 @@ def analyze_golf_metrics(
     tempo_metrics = build_tempo_metrics(references)
 
     address_posture_metrics = (
-        build_address_posture_metrics(
-            references=references,
-            frame_width=frame_width,
-            frame_height=frame_height,
-        )
+      build_address_posture_metrics(
+        references=references,
+        frame_width=frame_width,
+        frame_height=frame_height,
+      )
+    )
+
+    impact_position_metrics = (
+      build_impact_position_metrics(
+        references=references,
+        frame_width=frame_width,
+        frame_height=frame_height,
+        handedness=handedness,
+      )
     )
 
     phase_validation = build_phase_validation(references)
@@ -1540,6 +1553,7 @@ def analyze_golf_metrics(
             "feedbackEligibility": feedback_eligibility,
             "tempo": tempo_metrics,
             "addressPosture": address_posture_metrics,
+            "impactPosition": impact_position_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
                 maximum_center_movements
@@ -1612,6 +1626,20 @@ def analyze_golf_metrics(
                 address_posture_metrics["feedback"][
                     "deliveryStatus"
                 ]
+            ),
+            "impactPositionClassification": (
+              impact_position_metrics["classification"]
+            ),
+            "impactPositionConfidence": (
+              impact_position_metrics["confidence"]
+            ),
+            "impactPositionMeasurementCompleteness": (
+              impact_position_metrics[
+                "measurementCompleteness"
+              ]["ratio"]
+            ),
+            "impactPositionFeedbackStatus": (
+              impact_position_metrics["feedback"]["status"]
             ),
         },
     }
