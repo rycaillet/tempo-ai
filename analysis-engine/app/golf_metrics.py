@@ -11,6 +11,7 @@ Handedness = Literal["right", "left"]
 
 REFERENCE_NAMES = (
     "addressReference",
+    "takeawayReference",
     "topOfBackswing",
     "downswingStart",
     "impactReference",
@@ -115,6 +116,7 @@ def get_reference_frame_indices(
 
     phase_mapping = {
         "addressReference": "address",
+        "takeawayReference": "takeaway",
         "topOfBackswing": "topOfBackswing",
         "downswingStart": "downswingStart",
         "impactReference": "impactReference",
@@ -611,8 +613,21 @@ def analyze_golf_metrics(
     )
 
     address_reference = references["addressReference"]
+    takeaway_reference = references["takeawayReference"]
 
     transitions = {
+        "addressToTakeaway": build_transition_metrics(
+            address_reference,
+            takeaway_reference,
+            frame_width,
+            frame_height,
+        ),
+        "takeawayToTop": build_transition_metrics(
+            takeaway_reference,
+            references["topOfBackswing"],
+            frame_width,
+            frame_height,
+        ),
         "addressToTop": build_transition_metrics(
             address_reference,
             references["topOfBackswing"],
