@@ -357,6 +357,89 @@ def build_transition_metrics(
     }
 
 
+def build_tempo_metrics(
+    references: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    required_references = (
+        "addressReference",
+        "topOfBackswing",
+        "impactReference",
+    )
+
+    timestamps: dict[str, float] = {}
+
+    for reference_name in required_references:
+        timestamp = references[reference_name].get(
+            "timestampSeconds"
+        )
+
+        if not isinstance(timestamp, (int, float)):
+            raise ValueError(
+                f"{reference_name} is missing a valid "
+                "timestampSeconds value."
+            )
+
+        timestamps[reference_name] = float(timestamp)
+
+    address_time = timestamps["addressReference"]
+    top_time = timestamps["topOfBackswing"]
+    impact_time = timestamps["impactReference"]
+
+    backswing_duration = top_time - address_time
+    downswing_duration = impact_time - top_time
+    total_swing_duration = impact_time - address_time
+
+    if backswing_duration <= 0.0:
+        raise ValueError(
+            "Backswing duration must be greater than zero."
+        )
+
+    if downswing_duration <= 0.0:
+        raise ValueError(
+            "Downswing duration must be greater than zero."
+        )
+
+    tempo_ratio = backswing_duration / downswing_duration
+
+    if tempo_ratio < 2.5:
+        classification = "quick"
+    elif tempo_ratio <= 3.5:
+        classification = "balanced"
+    else:
+        classification = "deliberate"
+
+    required_frames_have_pose = all(
+        bool(references[reference_name].get("poseDetected"))
+        for reference_name in required_references
+    )
+
+    confidence = 1.0 if required_frames_have_pose else 0.75
+
+    return {
+        "backswingDurationSeconds": round_value(
+            backswing_duration
+        ),
+        "downswingDurationSeconds": round_value(
+            downswing_duration
+        ),
+        "totalSwingDurationSeconds": round_value(
+            total_swing_duration
+        ),
+        "backswingToDownswingRatio": round_value(
+            tempo_ratio
+        ),
+        "ratioDisplay": f"{tempo_ratio:.2f}:1",
+        "classification": classification,
+        "confidence": confidence,
+        "referenceFrames": {
+            "backswingStart": "addressReference",
+            "backswingEnd": "topOfBackswing",
+            "downswingStart": "topOfBackswing",
+            "downswingEnd": "impactReference",
+        },
+    }
+
+
 def get_arm_mapping(
     handedness: Handedness,
 ) -> dict[str, str]:
@@ -681,6 +764,8 @@ def analyze_golf_metrics(
         )
     )
 
+    tempo_metrics = build_tempo_metrics(references)
+
     result = {
         "sourceVideo": geometry_data.get("sourceVideo"),
         "inputs": {
@@ -740,6 +825,7 @@ def analyze_golf_metrics(
             for reference_name, reference in references.items()
         },
         "metrics": {
+            "tempo": tempo_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
                 maximum_center_movements
@@ -771,6 +857,13 @@ def analyze_golf_metrics(
                 for reference in references.values()
             ),
             "handednessAssumption": handedness,
+            "tempoRatio": tempo_metrics[
+                "backswingToDownswingRatio"
+            ],
+            "tempoClassification": tempo_metrics[
+                "classification"
+            ],
+            "tempoConfidence": tempo_metrics["confidence"],
         },
     }
 
