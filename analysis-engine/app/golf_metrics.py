@@ -672,6 +672,62 @@ def build_phase_validation(
     }
 
 
+
+def build_feedback_eligibility(
+    phase_validation: dict[str, Any],
+) -> dict[str, Any]:
+    validation_status = phase_validation.get("status")
+    validation_confidence = phase_validation.get("confidence")
+    failed_checks = phase_validation.get("failedChecks", [])
+
+    if validation_status == "valid":
+        return {
+            "eligible": True,
+            "status": "eligible",
+            "mode": "normal",
+            "requiresDisclaimer": False,
+            "reason": (
+                "Phase validation passed. Coaching feedback "
+                "may be displayed normally."
+            ),
+            "validationStatus": validation_status,
+            "validationConfidence": validation_confidence,
+            "failedChecks": failed_checks,
+        }
+
+    if validation_status == "review":
+        return {
+            "eligible": True,
+            "status": "eligible_with_caution",
+            "mode": "cautious",
+            "requiresDisclaimer": True,
+            "reason": (
+                "Most phase checks passed, but one or more "
+                "noncritical checks require review. Coaching "
+                "feedback should be displayed with a "
+                "low-confidence disclaimer."
+            ),
+            "validationStatus": validation_status,
+            "validationConfidence": validation_confidence,
+            "failedChecks": failed_checks,
+        }
+
+    return {
+        "eligible": False,
+        "status": "suppressed",
+        "mode": "suppressed",
+        "requiresDisclaimer": True,
+        "reason": (
+            "Phase validation failed. Coaching feedback "
+            "should be hidden until a reliable swing analysis "
+            "is available."
+        ),
+        "validationStatus": validation_status,
+        "validationConfidence": validation_confidence,
+        "failedChecks": failed_checks,
+    }
+
+
 def get_arm_mapping(
     handedness: Handedness,
 ) -> dict[str, str]:
@@ -998,6 +1054,9 @@ def analyze_golf_metrics(
 
     tempo_metrics = build_tempo_metrics(references)
     phase_validation = build_phase_validation(references)
+    feedback_eligibility = build_feedback_eligibility(
+        phase_validation
+    )
 
     result = {
         "sourceVideo": geometry_data.get("sourceVideo"),
@@ -1059,6 +1118,7 @@ def analyze_golf_metrics(
         },
         "metrics": {
             "phaseValidation": phase_validation,
+            "feedbackEligibility": feedback_eligibility,
             "tempo": tempo_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
@@ -1107,6 +1167,12 @@ def analyze_golf_metrics(
             "phaseValidationConfidence": phase_validation[
                 "confidence"
             ],
+            "feedbackEligibilityStatus": (
+                feedback_eligibility["status"]
+            ),
+            "coachingFeedbackEligible": (
+                feedback_eligibility["eligible"]
+            ),
         },
     }
 
