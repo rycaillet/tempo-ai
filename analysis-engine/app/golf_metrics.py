@@ -478,6 +478,200 @@ def build_tempo_metrics(
     }
 
 
+def build_phase_validation(
+    references: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    ordered_reference_names = (
+        "addressReference",
+        "takeawayReference",
+        "topOfBackswing",
+        "downswingStart",
+        "impactReference",
+        "finishReference",
+    )
+
+    frame_indices: dict[str, int] = {}
+    timestamps: dict[str, float] = {}
+
+    for reference_name in ordered_reference_names:
+        reference = references[reference_name]
+        frame_index = reference.get("frameIndex")
+        timestamp = reference.get("timestampSeconds")
+
+        if not isinstance(frame_index, int):
+            raise ValueError(
+                f"{reference_name} is missing a valid "
+                "frameIndex."
+            )
+
+        if not isinstance(timestamp, (int, float)):
+            raise ValueError(
+                f"{reference_name} is missing a valid "
+                "timestampSeconds value."
+            )
+
+        frame_indices[reference_name] = frame_index
+        timestamps[reference_name] = float(timestamp)
+
+    ordered_frames = [
+        frame_indices[name]
+        for name in ordered_reference_names
+    ]
+    ordered_times = [
+        timestamps[name]
+        for name in ordered_reference_names
+    ]
+
+    durations = {
+        "addressToTakeawaySeconds": (
+            timestamps["takeawayReference"]
+            - timestamps["addressReference"]
+        ),
+        "backswingSeconds": (
+            timestamps["topOfBackswing"]
+            - timestamps["addressReference"]
+        ),
+        "topToDownswingStartSeconds": (
+            timestamps["downswingStart"]
+            - timestamps["topOfBackswing"]
+        ),
+        "downswingSeconds": (
+            timestamps["impactReference"]
+            - timestamps["topOfBackswing"]
+        ),
+        "downswingStartToImpactSeconds": (
+            timestamps["impactReference"]
+            - timestamps["downswingStart"]
+        ),
+        "impactToFinishSeconds": (
+            timestamps["finishReference"]
+            - timestamps["impactReference"]
+        ),
+    }
+
+    checks = {
+        "frameOrderStrictlyIncreasing": all(
+            earlier < later
+            for earlier, later in zip(
+                ordered_frames,
+                ordered_frames[1:],
+            )
+        ),
+        "timestampOrderStrictlyIncreasing": all(
+            earlier < later
+            for earlier, later in zip(
+                ordered_times,
+                ordered_times[1:],
+            )
+        ),
+        "allReferenceFramesHavePose": all(
+            bool(references[name].get("poseDetected"))
+            for name in ordered_reference_names
+        ),
+        "takeawayTimingPlausible": (
+            0.02
+            <= durations["addressToTakeawaySeconds"]
+            <= 0.75
+        ),
+        "backswingTimingPlausible": (
+            0.30
+            <= durations["backswingSeconds"]
+            <= 3.00
+        ),
+        "transitionTimingPlausible": (
+            0.00
+            < durations["topToDownswingStartSeconds"]
+            <= 0.75
+        ),
+        "downswingTimingPlausible": (
+            0.10
+            <= durations["downswingSeconds"]
+            <= 1.50
+        ),
+        "impactTimingPlausible": (
+            0.02
+            <= durations[
+                "downswingStartToImpactSeconds"
+            ]
+            <= 0.75
+        ),
+        "finishTimingPlausible": (
+            0.10
+            <= durations["impactToFinishSeconds"]
+            <= 3.00
+        ),
+    }
+
+    passed_check_count = sum(checks.values())
+    total_check_count = len(checks)
+    confidence = passed_check_count / total_check_count
+
+    critical_checks = (
+        checks["frameOrderStrictlyIncreasing"],
+        checks["timestampOrderStrictlyIncreasing"],
+        checks["allReferenceFramesHavePose"],
+        checks["backswingTimingPlausible"],
+        checks["downswingTimingPlausible"],
+    )
+
+    if all(checks.values()):
+        status = "valid"
+    elif all(critical_checks) and confidence >= 0.75:
+        status = "review"
+    else:
+        status = "invalid"
+
+    failed_checks = [
+        check_name
+        for check_name, passed in checks.items()
+        if not passed
+    ]
+
+    return {
+        "status": status,
+        "confidence": round_value(confidence),
+        "passedCheckCount": passed_check_count,
+        "totalCheckCount": total_check_count,
+        "failedChecks": failed_checks,
+        "checks": checks,
+        "durationsSeconds": {
+            name: round_value(value)
+            for name, value in durations.items()
+        },
+        "thresholds": {
+            "addressToTakeawaySeconds": {
+                "minimum": 0.02,
+                "maximum": 0.75,
+            },
+            "backswingSeconds": {
+                "minimum": 0.30,
+                "maximum": 3.00,
+            },
+            "topToDownswingStartSeconds": {
+                "exclusiveMinimum": 0.00,
+                "maximum": 0.75,
+            },
+            "downswingSeconds": {
+                "minimum": 0.10,
+                "maximum": 1.50,
+            },
+            "downswingStartToImpactSeconds": {
+                "minimum": 0.02,
+                "maximum": 0.75,
+            },
+            "impactToFinishSeconds": {
+                "minimum": 0.10,
+                "maximum": 3.00,
+            },
+        },
+        "basis": (
+            "Prototype phase-quality checks used to identify "
+            "obviously invalid or questionable phase timing "
+            "before downstream coaching feedback is displayed."
+        ),
+    }
+
+
 def get_arm_mapping(
     handedness: Handedness,
 ) -> dict[str, str]:
@@ -803,6 +997,7 @@ def analyze_golf_metrics(
     )
 
     tempo_metrics = build_tempo_metrics(references)
+    phase_validation = build_phase_validation(references)
 
     result = {
         "sourceVideo": geometry_data.get("sourceVideo"),
@@ -863,6 +1058,7 @@ def analyze_golf_metrics(
             for reference_name, reference in references.items()
         },
         "metrics": {
+            "phaseValidation": phase_validation,
             "tempo": tempo_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
@@ -904,6 +1100,12 @@ def analyze_golf_metrics(
             "tempoConfidence": tempo_metrics["confidence"],
             "tempoStatus": tempo_metrics["feedback"][
                 "status"
+            ],
+            "phaseValidationStatus": phase_validation[
+                "status"
+            ],
+            "phaseValidationConfidence": phase_validation[
+                "confidence"
             ],
         },
     }
