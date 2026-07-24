@@ -833,6 +833,121 @@ def build_arm_metrics(
 
     return arm_metrics
 
+def build_address_posture_metrics(
+    references: dict[str, dict[str, Any]],
+    frame_width: float,
+    frame_height: float,
+) -> dict[str, Any]:
+    address_reference = references.get("addressReference")
+
+    if not isinstance(address_reference, dict):
+        raise ValueError("Address reference is missing.")
+
+    geometry = address_reference.get("geometry")
+
+    if not isinstance(geometry, dict):
+        raise ValueError(
+            "Address reference geometry is missing."
+        )
+
+    spine_angle = geometry.get("spineAngle")
+    shoulder_tilt = geometry.get("shoulderTilt")
+    hip_tilt = geometry.get("hipTilt")
+
+    head_center = geometry.get("headCenter")
+    shoulder_center = geometry.get("shoulderCenter")
+    hip_center = geometry.get("hipCenter")
+
+    measurements = {
+        "spineAngleDegrees": (
+            round_value(float(spine_angle))
+            if isinstance(spine_angle, (int, float))
+            else None
+        ),
+        "shoulderTiltDegrees": (
+            round_value(float(shoulder_tilt))
+            if isinstance(shoulder_tilt, (int, float))
+            else None
+        ),
+        "hipTiltDegrees": (
+            round_value(float(hip_tilt))
+            if isinstance(hip_tilt, (int, float))
+            else None
+        ),
+        "headToHipOffset": normalized_point_delta(
+            hip_center,
+            head_center,
+            frame_width,
+            frame_height,
+        ),
+        "shoulderToHipOffset": normalized_point_delta(
+            hip_center,
+            shoulder_center,
+            frame_width,
+            frame_height,
+        ),
+    }
+
+    available_measurements = (
+        measurements["spineAngleDegrees"],
+        measurements["shoulderTiltDegrees"],
+        measurements["hipTiltDegrees"],
+        measurements["headToHipOffset"][
+            "distanceNormalized"
+        ],
+        measurements["shoulderToHipOffset"][
+            "distanceNormalized"
+        ],
+    )
+
+    available_measurement_count = sum(
+        measurement is not None
+        for measurement in available_measurements
+    )
+
+    total_measurement_count = len(available_measurements)
+
+    completeness = (
+        available_measurement_count
+        / total_measurement_count
+    )
+
+    confidence = completeness
+
+    if not address_reference.get("poseDetected"):
+        confidence *= 0.75
+
+    return {
+        "referenceFrame": {
+            "name": "addressReference",
+            "frameIndex": address_reference.get(
+                "frameIndex"
+            ),
+            "timestampSeconds": address_reference.get(
+                "timestampSeconds"
+            ),
+            "poseDetected": bool(
+                address_reference.get("poseDetected")
+            ),
+        },
+        "measurements": measurements,
+        "measurementCompleteness": {
+            "available": available_measurement_count,
+            "total": total_measurement_count,
+            "ratio": round_value(completeness),
+        },
+        "confidence": round_value(confidence),
+        "classification": "unclassified",
+        "feedback": {
+            "status": "not_available",
+            "message": None,
+            "basis": (
+                "Address posture measurements are available, "
+                "but coaching thresholds have not yet been "
+                "applied."
+            ),
+        },
+    }
 
 def calculate_maximum_center_movement(
     frames: list[dict[str, Any]],
