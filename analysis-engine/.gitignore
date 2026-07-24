@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Generated analysis files
+output/*.json
+output/*.csv
