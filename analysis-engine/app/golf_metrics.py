@@ -104,46 +104,52 @@ def create_frame_lookup(
 
 
 def get_reference_frame_indices(
-    motion_data: dict[str, Any],
+    refined_phases_data: dict[str, Any],
 ) -> dict[str, int]:
-    active_window = motion_data.get("activePoseWindow")
-    phase_candidates = motion_data.get("phaseCandidates")
+    phases = refined_phases_data.get("phases")
 
-    if not isinstance(active_window, dict):
+    if not isinstance(phases, dict):
         raise ValueError(
-            "Motion analysis is missing activePoseWindow."
+            "Refined phase analysis is missing phases."
         )
 
-    if not isinstance(phase_candidates, dict):
-        raise ValueError(
-            "Motion analysis is missing phaseCandidates."
-        )
-
-    top = phase_candidates.get("topOfBackswing")
-    downswing = phase_candidates.get("downswingStart")
-    impact = phase_candidates.get("impactZone")
-    movement_end = phase_candidates.get("movementEnd")
-
-    required_objects = {
-        "topOfBackswing": top,
-        "downswingStart": downswing,
-        "impactZone": impact,
-        "movementEnd": movement_end,
+    phase_mapping = {
+        "addressReference": "address",
+        "topOfBackswing": "topOfBackswing",
+        "downswingStart": "downswingStart",
+        "impactReference": "impactReference",
+        "finishReference": "finishReference",
     }
 
-    for name, value in required_objects.items():
-        if not isinstance(value, dict):
+    reference_indices: dict[str, int] = {}
+
+    for reference_name, phase_name in phase_mapping.items():
+        phase = phases.get(phase_name)
+
+        if not isinstance(phase, dict):
             raise ValueError(
-                f"Motion analysis is missing {name}."
+                "Refined phase analysis is missing "
+                f"{phase_name}."
             )
 
-    return {
-        "addressReference": int(active_window["startFrame"]),
-        "topOfBackswing": int(top["frameIndex"]),
-        "downswingStart": int(downswing["frameIndex"]),
-        "impactReference": int(impact["peakFrame"]),
-        "finishReference": int(movement_end["frameIndex"]),
-    }
+        frame_index = phase.get("frameIndex")
+
+        if not isinstance(frame_index, int):
+            raise ValueError(
+                f"Refined phase {phase_name} is missing "
+                "a valid frameIndex."
+            )
+
+        reference_indices[reference_name] = frame_index
+
+    frame_indices = list(reference_indices.values())
+
+    if frame_indices != sorted(frame_indices):
+        raise ValueError(
+            "Refined golf phases are not chronological."
+        )
+
+    return reference_indices
 
 
 def extract_reference_frames(
@@ -568,12 +574,12 @@ def derive_output_path(
 
 def analyze_golf_metrics(
     geometry_path: Path,
-    motion_path: Path,
+    refined_phases_path: Path,
     output_path: Path | None = None,
     handedness: Handedness = "right",
 ) -> dict[str, Any]:
     geometry_data = load_json(geometry_path)
-    motion_data = load_json(motion_path)
+    refined_phases_data = load_json(refined_phases_path)
 
     metadata = geometry_data.get("metadata")
     orientation = geometry_data.get("orientation")
@@ -596,7 +602,7 @@ def analyze_golf_metrics(
     frame_lookup = create_frame_lookup(geometry_data)
 
     reference_indices = get_reference_frame_indices(
-        motion_data
+        refined_phases_data
     )
 
     references = extract_reference_frames(
@@ -666,8 +672,8 @@ def analyze_golf_metrics(
             "geometryAnalysisPath": str(
                 geometry_path.resolve()
             ),
-            "motionAnalysisPath": str(
-                motion_path.resolve()
+            "refinedPhasesPath": str(
+                refined_phases_path.resolve()
             ),
         },
         "coordinateSystem": {
@@ -682,17 +688,22 @@ def analyze_golf_metrics(
         },
         "assumptions": {
             "handedness": handedness,
+            "phaseReferences": (
+                "Reference frames come from the golf-specific "
+                "refined phase analysis."
+            ),
             "addressReference": (
-                "First frame in the active pose window. "
-                "This is not yet a validated golf address frame."
+                "Golf address frame selected from a sustained, "
+                "plausible setup posture."
             ),
             "impactReference": (
-                "Peak frame from the detected impact zone. "
-                "This is a motion-based estimate."
+                "Peak-motion impact reference from the refined "
+                "golf phase analysis."
             ),
             "finishReference": (
-                "Detected movement-end frame. "
-                "This is not yet a validated finish pose."
+                "Movement-end finish reference from the refined "
+                "golf phase analysis. Finish posture validation "
+                "is not yet implemented."
             ),
             "rotationMeasurements": (
                 "Shoulder and hip tilt are 2D image-plane "
@@ -770,7 +781,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Generate golf-specific metrics from geometry "
-            "and motion analysis files."
+            "and refined golf phase analysis files."
         )
     )
 
@@ -781,9 +792,9 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "motion_path",
+        "refined_phases_path",
         type=Path,
-        help="Path to the motion-analysis JSON file.",
+        help="Path to the refined-phases JSON file.",
     )
 
     parser.add_argument(
@@ -815,7 +826,7 @@ def main() -> None:
     try:
         result = analyze_golf_metrics(
             geometry_path=args.geometry_path,
-            motion_path=args.motion_path,
+            refined_phases_path=args.refined_phases_path,
             output_path=args.output,
             handedness=args.handedness,
         )
