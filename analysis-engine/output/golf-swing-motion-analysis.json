@@ -1,0 +1,648 @@
+{
+  "activePoseWindow": {
+    "startFrame": 59,
+    "endFrame": 143,
+    "frameCount": 85,
+    "startTimeSeconds": 2.36,
+    "endTimeSeconds": 5.72,
+    "durationSeconds": 3.36
+  },
+  "summary": {
+    "analyzedFrames": 85,
+    "peakMotionFrame": 107,
+    "peakMotionTimeSeconds": 4.28,
+    "peakMotionValue": 0.170691,
+    "medianMotionValue": 0.057806,
+    "movementThreshold": 0.086709,
+    "estimatedFps": 25.0,
+    "peakSearchMarginFrames": 10
+  },
+  "phaseCandidates": {
+    "movementStart": {
+      "frameIndex": 102,
+      "timestampSeconds": 4.08,
+      "confidence": 1.0
+    },
+    "topOfBackswing": {
+      "frameIndex": 93,
+      "timestampSeconds": 3.72,
+      "confidence": 1.0
+    },
+    "downswingStart": {
+      "frameIndex": 102,
+      "timestampSeconds": 4.08,
+      "confidence": 0.853
+    },
+    "impactZone": {
+      "startFrame": 106,
+      "startTimeSeconds": 4.24,
+      "peakFrame": 107,
+      "peakTimeSeconds": 4.28,
+      "endFrame": 113,
+      "endTimeSeconds": 4.52,
+      "confidence": 0.994
+    },
+    "movementEnd": {
+      "frameIndex": 117,
+      "timestampSeconds": 4.68,
+      "confidence": 0.863
+    }
+  },
+  "frames": [
+    {
+      "frameIndex": 59,
+      "timestampSeconds": 2.36,
+      "rawMotion": 0.0,
+      "smoothedMotion": 0.289328,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 60,
+      "timestampSeconds": 2.4,
+      "rawMotion": 0.266439,
+      "smoothedMotion": 0.259524,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 61,
+      "timestampSeconds": 2.44,
+      "rawMotion": 0.365564,
+      "smoothedMotion": 0.22808,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 62,
+      "timestampSeconds": 2.48,
+      "rawMotion": 0.525308,
+      "smoothedMotion": 0.210447,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 63,
+      "timestampSeconds": 2.52,
+      "rawMotion": 0.140311,
+      "smoothedMotion": 0.21566,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 64,
+      "timestampSeconds": 2.56,
+      "rawMotion": 0.070857,
+      "smoothedMotion": 0.189354,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 65,
+      "timestampSeconds": 2.6,
+      "rawMotion": 0.104652,
+      "smoothedMotion": 0.139709,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 66,
+      "timestampSeconds": 2.64,
+      "rawMotion": 0.03649,
+      "smoothedMotion": 0.073,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 67,
+      "timestampSeconds": 2.68,
+      "rawMotion": 0.082297,
+      "smoothedMotion": 0.066157,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 68,
+      "timestampSeconds": 2.72,
+      "rawMotion": 0.018045,
+      "smoothedMotion": 0.058262,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 69,
+      "timestampSeconds": 2.76,
+      "rawMotion": 0.058345,
+      "smoothedMotion": 0.05814,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 70,
+      "timestampSeconds": 2.8,
+      "rawMotion": 0.092413,
+      "smoothedMotion": 0.059601,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 71,
+      "timestampSeconds": 2.84,
+      "rawMotion": 0.015589,
+      "smoothedMotion": 0.062934,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 72,
+      "timestampSeconds": 2.88,
+      "rawMotion": 0.103801,
+      "smoothedMotion": 0.074209,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 73,
+      "timestampSeconds": 2.92,
+      "rawMotion": 0.046716,
+      "smoothedMotion": 0.069443,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 74,
+      "timestampSeconds": 2.96,
+      "rawMotion": 0.105631,
+      "smoothedMotion": 0.06681,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 75,
+      "timestampSeconds": 3.0,
+      "rawMotion": 0.096968,
+      "smoothedMotion": 0.069833,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 76,
+      "timestampSeconds": 3.04,
+      "rawMotion": 0.024985,
+      "smoothedMotion": 0.064254,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 77,
+      "timestampSeconds": 3.08,
+      "rawMotion": 0.073979,
+      "smoothedMotion": 0.068456,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 78,
+      "timestampSeconds": 3.12,
+      "rawMotion": 0.03675,
+      "smoothedMotion": 0.056512,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 79,
+      "timestampSeconds": 3.16,
+      "rawMotion": 0.064746,
+      "smoothedMotion": 0.049433,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 80,
+      "timestampSeconds": 3.2,
+      "rawMotion": 0.076136,
+      "smoothedMotion": 0.047978,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 81,
+      "timestampSeconds": 3.24,
+      "rawMotion": 0.022022,
+      "smoothedMotion": 0.041962,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 82,
+      "timestampSeconds": 3.28,
+      "rawMotion": 0.047415,
+      "smoothedMotion": 0.040788,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 83,
+      "timestampSeconds": 3.32,
+      "rawMotion": 0.014798,
+      "smoothedMotion": 0.032367,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 84,
+      "timestampSeconds": 3.36,
+      "rawMotion": 0.031867,
+      "smoothedMotion": 0.022254,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 85,
+      "timestampSeconds": 3.4,
+      "rawMotion": 0.02853,
+      "smoothedMotion": 0.019637,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 86,
+      "timestampSeconds": 3.44,
+      "rawMotion": 0.005799,
+      "smoothedMotion": 0.014125,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 87,
+      "timestampSeconds": 3.48,
+      "rawMotion": 0.00535,
+      "smoothedMotion": 0.013292,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 88,
+      "timestampSeconds": 3.52,
+      "rawMotion": 0.003698,
+      "smoothedMotion": 0.009565,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 89,
+      "timestampSeconds": 3.56,
+      "rawMotion": 0.008832,
+      "smoothedMotion": 0.006438,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 90,
+      "timestampSeconds": 3.6,
+      "rawMotion": 0.008966,
+      "smoothedMotion": 0.00604,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 91,
+      "timestampSeconds": 3.64,
+      "rawMotion": 0.005779,
+      "smoothedMotion": 0.005753,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 92,
+      "timestampSeconds": 3.68,
+      "rawMotion": 0.006639,
+      "smoothedMotion": 0.005995,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 93,
+      "timestampSeconds": 3.72,
+      "rawMotion": 0.003018,
+      "smoothedMotion": 0.005365,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 94,
+      "timestampSeconds": 3.76,
+      "rawMotion": 0.003342,
+      "smoothedMotion": 0.00669,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 95,
+      "timestampSeconds": 3.8,
+      "rawMotion": 0.005387,
+      "smoothedMotion": 0.007167,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 96,
+      "timestampSeconds": 3.84,
+      "rawMotion": 0.004423,
+      "smoothedMotion": 0.011105,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 97,
+      "timestampSeconds": 3.88,
+      "rawMotion": 0.018244,
+      "smoothedMotion": 0.017548,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 98,
+      "timestampSeconds": 3.92,
+      "rawMotion": 0.009116,
+      "smoothedMotion": 0.021512,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 99,
+      "timestampSeconds": 3.96,
+      "rawMotion": 0.034206,
+      "smoothedMotion": 0.039186,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 100,
+      "timestampSeconds": 4.0,
+      "rawMotion": 0.048119,
+      "smoothedMotion": 0.040496,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 101,
+      "timestampSeconds": 4.04,
+      "rawMotion": 0.031092,
+      "smoothedMotion": 0.059826,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 102,
+      "timestampSeconds": 4.08,
+      "rawMotion": 0.129103,
+      "smoothedMotion": 0.087597,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 103,
+      "timestampSeconds": 4.12,
+      "rawMotion": 0.013593,
+      "smoothedMotion": 0.087215,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 104,
+      "timestampSeconds": 4.16,
+      "rawMotion": 0.153552,
+      "smoothedMotion": 0.115141,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 105,
+      "timestampSeconds": 4.2,
+      "rawMotion": 0.203513,
+      "smoothedMotion": 0.114152,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 106,
+      "timestampSeconds": 4.24,
+      "rawMotion": 0.031533,
+      "smoothedMotion": 0.127955,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 107,
+      "timestampSeconds": 4.28,
+      "rawMotion": 0.243598,
+      "smoothedMotion": 0.170691,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 108,
+      "timestampSeconds": 4.32,
+      "rawMotion": 0.024168,
+      "smoothedMotion": 0.155068,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 109,
+      "timestampSeconds": 4.36,
+      "rawMotion": 0.225729,
+      "smoothedMotion": 0.14735,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 110,
+      "timestampSeconds": 4.4,
+      "rawMotion": 0.312744,
+      "smoothedMotion": 0.150459,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 111,
+      "timestampSeconds": 4.44,
+      "rawMotion": 0.044194,
+      "smoothedMotion": 0.144389,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 112,
+      "timestampSeconds": 4.48,
+      "rawMotion": 0.149482,
+      "smoothedMotion": 0.159508,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 113,
+      "timestampSeconds": 4.52,
+      "rawMotion": 0.053296,
+      "smoothedMotion": 0.131874,
+      "validLandmarkCount": 8
+    },
+    {
+      "frameIndex": 114,
+      "timestampSeconds": 4.56,
+      "rawMotion": 0.20111,
+      "smoothedMotion": 0.103544,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 115,
+      "timestampSeconds": 4.6,
+      "rawMotion": 0.129997,
+      "smoothedMotion": 0.101794,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 116,
+      "timestampSeconds": 4.64,
+      "rawMotion": 0.032291,
+      "smoothedMotion": 0.102753,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 117,
+      "timestampSeconds": 4.68,
+      "rawMotion": 0.114439,
+      "smoothedMotion": 0.100195,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 118,
+      "timestampSeconds": 4.72,
+      "rawMotion": 0.031943,
+      "smoothedMotion": 0.072915,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 119,
+      "timestampSeconds": 4.76,
+      "rawMotion": 0.15619,
+      "smoothedMotion": 0.059055,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 120,
+      "timestampSeconds": 4.8,
+      "rawMotion": 0.035396,
+      "smoothedMotion": 0.057472,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 121,
+      "timestampSeconds": 4.84,
+      "rawMotion": 0.01015,
+      "smoothedMotion": 0.048845,
+      "validLandmarkCount": 5
+    },
+    {
+      "frameIndex": 122,
+      "timestampSeconds": 4.88,
+      "rawMotion": 0.032973,
+      "smoothedMotion": 0.051093,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 123,
+      "timestampSeconds": 4.92,
+      "rawMotion": 0.021213,
+      "smoothedMotion": 0.030839,
+      "validLandmarkCount": 6
+    },
+    {
+      "frameIndex": 124,
+      "timestampSeconds": 4.96,
+      "rawMotion": 0.054048,
+      "smoothedMotion": 0.028722,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 125,
+      "timestampSeconds": 5.0,
+      "rawMotion": 0.047678,
+      "smoothedMotion": 0.029201,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 126,
+      "timestampSeconds": 5.04,
+      "rawMotion": 0.014412,
+      "smoothedMotion": 0.027336,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 127,
+      "timestampSeconds": 5.08,
+      "rawMotion": 0.020582,
+      "smoothedMotion": 0.026381,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 128,
+      "timestampSeconds": 5.12,
+      "rawMotion": 0.013501,
+      "smoothedMotion": 0.019798,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 129,
+      "timestampSeconds": 5.16,
+      "rawMotion": 0.019916,
+      "smoothedMotion": 0.015943,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 130,
+      "timestampSeconds": 5.2,
+      "rawMotion": 0.014531,
+      "smoothedMotion": 0.01522,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 131,
+      "timestampSeconds": 5.24,
+      "rawMotion": 0.007965,
+      "smoothedMotion": 0.015988,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 132,
+      "timestampSeconds": 5.28,
+      "rawMotion": 0.020696,
+      "smoothedMotion": 0.018115,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 133,
+      "timestampSeconds": 5.32,
+      "rawMotion": 0.00935,
+      "smoothedMotion": 0.017295,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 134,
+      "timestampSeconds": 5.36,
+      "rawMotion": 0.025956,
+      "smoothedMotion": 0.019276,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 135,
+      "timestampSeconds": 5.4,
+      "rawMotion": 0.02839,
+      "smoothedMotion": 0.019032,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 136,
+      "timestampSeconds": 5.44,
+      "rawMotion": 0.014179,
+      "smoothedMotion": 0.019805,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 137,
+      "timestampSeconds": 5.48,
+      "rawMotion": 0.028395,
+      "smoothedMotion": 0.022765,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 138,
+      "timestampSeconds": 5.52,
+      "rawMotion": 0.006261,
+      "smoothedMotion": 0.02042,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 139,
+      "timestampSeconds": 5.56,
+      "rawMotion": 0.026101,
+      "smoothedMotion": 0.024168,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 140,
+      "timestampSeconds": 5.6,
+      "rawMotion": 0.030071,
+      "smoothedMotion": 0.066798,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 141,
+      "timestampSeconds": 5.64,
+      "rawMotion": 0.009545,
+      "smoothedMotion": 0.073199,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 142,
+      "timestampSeconds": 5.68,
+      "rawMotion": 0.054624,
+      "smoothedMotion": 0.086586,
+      "validLandmarkCount": 7
+    },
+    {
+      "frameIndex": 143,
+      "timestampSeconds": 5.72,
+      "rawMotion": 0.312591,
+      "smoothedMotion": 0.101708,
+      "validLandmarkCount": 7
+    }
+  ]
+}
