@@ -70,34 +70,15 @@ class AddressPostureMetricsTests(unittest.TestCase):
 
         self.assertEqual(
             measurements["headToHipOffset"][
-                "deltaXNormalized"
-            ],
-            0.0,
-        )
-        self.assertEqual(
-            measurements["headToHipOffset"][
                 "deltaYNormalized"
             ],
             -0.38,
         )
         self.assertEqual(
-            measurements["headToHipOffset"][
-                "deltaYPixels"
-            ],
-            -410.4,
-        )
-
-        self.assertEqual(
             measurements["shoulderToHipOffset"][
                 "deltaYNormalized"
             ],
             -0.2,
-        )
-        self.assertEqual(
-            measurements["shoulderToHipOffset"][
-                "deltaYPixels"
-            ],
-            -216.0,
         )
 
         self.assertEqual(
@@ -109,16 +90,8 @@ class AddressPostureMetricsTests(unittest.TestCase):
             },
         )
         self.assertEqual(result["confidence"], 1.0)
-        self.assertEqual(
-            result["classification"],
-            "unclassified",
-        )
-        self.assertEqual(
-            result["feedback"]["status"],
-            "not_available",
-        )
 
-    def test_records_address_reference_metadata(
+    def test_neutral_address_posture_is_within_target(
         self,
     ) -> None:
         result = build_address_posture_metrics(
@@ -128,16 +101,157 @@ class AddressPostureMetricsTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            result["referenceFrame"],
-            {
-                "name": "addressReference",
-                "frameIndex": 65,
-                "timestampSeconds": 2.6,
-                "poseDetected": True,
-            },
+            result["classification"],
+            "neutral",
+        )
+        self.assertEqual(result["issueCount"], 0)
+        self.assertIsNone(result["primaryIssue"])
+        self.assertEqual(
+            result["feedback"]["status"],
+            "within_target",
         )
 
-    def test_missing_measurements_reduce_completeness(
+        for finding in result["findings"].values():
+            self.assertIn(
+                finding["status"],
+                {
+                    "within_target",
+                    "centered",
+                },
+            )
+
+    def test_upright_spine_is_identified(
+        self,
+    ) -> None:
+        geometry = {
+            "headCenter": {
+                "x": 0.50,
+                "y": 0.20,
+            },
+            "shoulderCenter": {
+                "x": 0.50,
+                "y": 0.38,
+            },
+            "hipCenter": {
+                "x": 0.50,
+                "y": 0.58,
+            },
+            "spineAngle": 25.0,
+            "shoulderTilt": 5.0,
+            "hipTilt": 2.0,
+        }
+
+        result = build_address_posture_metrics(
+            references=self.build_references(
+                geometry=geometry
+            ),
+            frame_width=1920,
+            frame_height=1080,
+        )
+
+        self.assertEqual(
+            result["classification"],
+            "needs_attention",
+        )
+        self.assertEqual(result["issueCount"], 1)
+        self.assertEqual(
+            result["primaryIssue"],
+            "spineAngle",
+        )
+        self.assertEqual(
+            result["findings"]["spineAngle"]["status"],
+            "too_upright",
+        )
+        self.assertEqual(
+            result["feedback"]["status"],
+            "outside_target",
+        )
+
+    def test_excessive_tilts_are_identified(
+        self,
+    ) -> None:
+        geometry = {
+            "headCenter": {
+                "x": 0.50,
+                "y": 0.20,
+            },
+            "shoulderCenter": {
+                "x": 0.50,
+                "y": 0.38,
+            },
+            "hipCenter": {
+                "x": 0.50,
+                "y": 0.58,
+            },
+            "spineAngle": 42.0,
+            "shoulderTilt": -22.0,
+            "hipTilt": -14.0,
+        }
+
+        result = build_address_posture_metrics(
+            references=self.build_references(
+                geometry=geometry
+            ),
+            frame_width=1920,
+            frame_height=1080,
+        )
+
+        self.assertEqual(result["issueCount"], 2)
+        self.assertEqual(
+            result["findings"]["shoulderTilt"][
+                "status"
+            ],
+            "excessive_tilt",
+        )
+        self.assertEqual(
+            result["findings"]["hipTilt"]["status"],
+            "excessive_tilt",
+        )
+
+    def test_horizontal_offsets_are_identified(
+        self,
+    ) -> None:
+        geometry = {
+            "headCenter": {
+                "x": 0.70,
+                "y": 0.20,
+            },
+            "shoulderCenter": {
+                "x": 0.65,
+                "y": 0.38,
+            },
+            "hipCenter": {
+                "x": 0.50,
+                "y": 0.58,
+            },
+            "spineAngle": 42.0,
+            "shoulderTilt": 5.0,
+            "hipTilt": 2.0,
+        }
+
+        result = build_address_posture_metrics(
+            references=self.build_references(
+                geometry=geometry
+            ),
+            frame_width=1920,
+            frame_height=1080,
+        )
+
+        self.assertEqual(result["issueCount"], 2)
+        self.assertEqual(
+            result["findings"]["headPosition"][
+                "status"
+            ],
+            "excessive_horizontal_offset",
+        )
+        self.assertEqual(
+            result["findings"]["shoulderPosition"][
+                "status"
+            ],
+            "excessive_horizontal_offset",
+        )
+
+    def test_missing_measurements_produce_incomplete_result(
         self,
     ) -> None:
         geometry = {
@@ -172,16 +286,25 @@ class AddressPostureMetricsTests(unittest.TestCase):
             },
         )
         self.assertEqual(result["confidence"], 0.6)
-
-        self.assertIsNone(
-            result["measurements"][
-                "shoulderTiltDegrees"
-            ]
+        self.assertEqual(
+            result["classification"],
+            "incomplete",
         )
-        self.assertIsNone(
-            result["measurements"][
-                "shoulderToHipOffset"
-            ]["distanceNormalized"]
+        self.assertEqual(
+            result["feedback"]["status"],
+            "insufficient_data",
+        )
+        self.assertEqual(
+            result["findings"]["shoulderTilt"][
+                "status"
+            ],
+            "not_available",
+        )
+        self.assertEqual(
+            result["findings"]["shoulderPosition"][
+                "status"
+            ],
+            "not_available",
         )
 
     def test_missing_pose_reduces_confidence(
@@ -202,6 +325,25 @@ class AddressPostureMetricsTests(unittest.TestCase):
         self.assertEqual(result["confidence"], 0.75)
         self.assertFalse(
             result["referenceFrame"]["poseDetected"]
+        )
+
+    def test_records_address_reference_metadata(
+        self,
+    ) -> None:
+        result = build_address_posture_metrics(
+            references=self.build_references(),
+            frame_width=1920,
+            frame_height=1080,
+        )
+
+        self.assertEqual(
+            result["referenceFrame"],
+            {
+                "name": "addressReference",
+                "frameIndex": 65,
+                "timestampSeconds": 2.6,
+                "poseDetected": True,
+            },
         )
 
     def test_missing_address_reference_raises_error(

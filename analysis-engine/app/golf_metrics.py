@@ -917,6 +917,226 @@ def build_address_posture_metrics(
     if not address_reference.get("poseDetected"):
         confidence *= 0.75
 
+    def classify_range(
+        *,
+        value: float | None,
+        minimum: float,
+        maximum: float,
+        below_status: str,
+        above_status: str,
+        within_message: str,
+        below_message: str,
+        above_message: str,
+    ) -> dict[str, Any]:
+        if value is None:
+            return {
+                "status": "not_available",
+                "value": None,
+                "targetRange": {
+                    "minimum": minimum,
+                    "maximum": maximum,
+                },
+                "message": (
+                    "This posture measurement was not available "
+                    "for the address frame."
+                ),
+            }
+
+        if value < minimum:
+            status = below_status
+            message = below_message
+        elif value > maximum:
+            status = above_status
+            message = above_message
+        else:
+            status = "within_target"
+            message = within_message
+
+        return {
+            "status": status,
+            "value": round_value(value),
+            "targetRange": {
+                "minimum": minimum,
+                "maximum": maximum,
+            },
+            "message": message,
+        }
+
+    spine_finding = classify_range(
+        value=measurements["spineAngleDegrees"],
+        minimum=35.0,
+        maximum=50.0,
+        below_status="too_upright",
+        above_status="too_bent",
+        within_message=(
+            "Your measured spine angle is within the prototype "
+            "address-posture target range."
+        ),
+        below_message=(
+            "Your measured spine angle appears relatively upright. "
+            "Additional forward bend from the hips may create a "
+            "more athletic address posture."
+        ),
+        above_message=(
+            "Your measured spine angle shows substantial forward "
+            "bend. Reducing excessive bend may help you maintain "
+            "balance and space during the swing."
+        ),
+    )
+
+    shoulder_tilt_finding = classify_range(
+        value=(
+            abs(measurements["shoulderTiltDegrees"])
+            if measurements["shoulderTiltDegrees"] is not None
+            else None
+        ),
+        minimum=0.0,
+        maximum=15.0,
+        below_status="too_level",
+        above_status="excessive_tilt",
+        within_message=(
+            "Your measured shoulder tilt is within the prototype "
+            "address-posture target range."
+        ),
+        below_message=(
+            "Your shoulders appear nearly level at address."
+        ),
+        above_message=(
+            "Your measured shoulder tilt appears pronounced at "
+            "address. Confirm that the setup is balanced and not "
+            "excessively tilted."
+        ),
+    )
+
+    hip_tilt_finding = classify_range(
+        value=(
+            abs(measurements["hipTiltDegrees"])
+            if measurements["hipTiltDegrees"] is not None
+            else None
+        ),
+        minimum=0.0,
+        maximum=10.0,
+        below_status="too_level",
+        above_status="excessive_tilt",
+        within_message=(
+            "Your measured hip tilt is within the prototype "
+            "address-posture target range."
+        ),
+        below_message=(
+            "Your hips appear nearly level at address."
+        ),
+        above_message=(
+            "Your measured hip tilt appears pronounced at address. "
+            "Confirm that your lower-body setup remains balanced."
+        ),
+    )
+
+    head_horizontal_offset = measurements[
+        "headToHipOffset"
+    ]["deltaXNormalized"]
+
+    head_position_finding = classify_range(
+        value=(
+            abs(head_horizontal_offset)
+            if isinstance(
+                head_horizontal_offset,
+                (int, float),
+            )
+            else None
+        ),
+        minimum=0.0,
+        maximum=0.12,
+        below_status="centered",
+        above_status="excessive_horizontal_offset",
+        within_message=(
+            "Your head is positioned within the prototype "
+            "horizontal alignment range relative to your hips."
+        ),
+        below_message=(
+            "Your head is centered relative to your hips."
+        ),
+        above_message=(
+            "Your head appears significantly offset from your hip "
+            "center at address. Check your balance and lateral setup."
+        ),
+    )
+
+    shoulder_horizontal_offset = measurements[
+        "shoulderToHipOffset"
+    ]["deltaXNormalized"]
+
+    shoulder_position_finding = classify_range(
+        value=(
+            abs(shoulder_horizontal_offset)
+            if isinstance(
+                shoulder_horizontal_offset,
+                (int, float),
+            )
+            else None
+        ),
+        minimum=0.0,
+        maximum=0.10,
+        below_status="centered",
+        above_status="excessive_horizontal_offset",
+        within_message=(
+            "Your shoulders are horizontally aligned within the "
+            "prototype range relative to your hips."
+        ),
+        below_message=(
+            "Your shoulders are centered relative to your hips."
+        ),
+        above_message=(
+            "Your shoulder center appears significantly offset from "
+            "your hip center. Check for excessive lateral lean."
+        ),
+    )
+
+    findings = {
+        "spineAngle": spine_finding,
+        "shoulderTilt": shoulder_tilt_finding,
+        "hipTilt": hip_tilt_finding,
+        "headPosition": head_position_finding,
+        "shoulderPosition": shoulder_position_finding,
+    }
+
+    issue_names = [
+        finding_name
+        for finding_name, finding in findings.items()
+        if finding["status"]
+        not in {
+            "within_target",
+            "centered",
+            "not_available",
+        }
+    ]
+
+    unavailable_count = sum(
+        finding["status"] == "not_available"
+        for finding in findings.values()
+    )
+
+    if issue_names:
+        classification = "needs_attention"
+        feedback_status = "outside_target"
+        primary_issue = issue_names[0]
+        feedback_message = findings[primary_issue]["message"]
+    elif unavailable_count > 0:
+        classification = "incomplete"
+        feedback_status = "insufficient_data"
+        primary_issue = None
+        feedback_message = (
+            "Some address-posture measurements were unavailable. "
+            "Review the address frame before relying on this result."
+        )
+    else:
+        classification = "neutral"
+        feedback_status = "within_target"
+        primary_issue = None
+        feedback_message = (
+            "Your measured address posture is within the current "
+            "prototype target ranges."
+        )
+
     return {
         "referenceFrame": {
             "name": "addressReference",
@@ -936,15 +1156,18 @@ def build_address_posture_metrics(
             "total": total_measurement_count,
             "ratio": round_value(completeness),
         },
+        "findings": findings,
+        "classification": classification,
+        "issueCount": len(issue_names),
+        "primaryIssue": primary_issue,
         "confidence": round_value(confidence),
-        "classification": "unclassified",
         "feedback": {
-            "status": "not_available",
-            "message": None,
+            "status": feedback_status,
+            "message": feedback_message,
             "basis": (
-                "Address posture measurements are available, "
-                "but coaching thresholds have not yet been "
-                "applied."
+                "Prototype heuristic ranges used to organize "
+                "address-posture observations. These ranges are "
+                "not universal golf instruction standards."
             ),
         },
     }
