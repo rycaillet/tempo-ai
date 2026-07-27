@@ -6,6 +6,9 @@ import math
 from pathlib import Path
 from typing import Any, Literal
 
+from app.metrics.head_stability import (
+    build_head_stability_metrics,
+)
 from app.metrics.impact_position import (
     build_impact_position_metrics,
 )
@@ -1467,6 +1470,13 @@ def analyze_golf_metrics(
       )
     )
 
+    head_stability_metrics = build_head_stability_metrics(
+        references=references,
+        frames=frames,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
+
     phase_validation = build_phase_validation(references)
 
     feedback_eligibility = build_feedback_eligibility(
@@ -1489,6 +1499,12 @@ def analyze_golf_metrics(
         metrics=impact_position_metrics,
         feedback_eligibility=feedback_eligibility,
         metric_name="Impact position",
+    )
+
+    head_stability_metrics = apply_feedback_eligibility(
+        metrics=head_stability_metrics,
+        feedback_eligibility=feedback_eligibility,
+        metric_name="Head stability",
     )
 
     result = {
@@ -1560,6 +1576,7 @@ def analyze_golf_metrics(
             "tempo": tempo_metrics,
             "addressPosture": address_posture_metrics,
             "impactPosition": impact_position_metrics,
+            "headStability": head_stability_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
                 maximum_center_movements
@@ -1651,6 +1668,31 @@ def analyze_golf_metrics(
               impact_position_metrics["feedback"][
                 "deliveryStatus"
               ]
+            ),
+            "headStabilityClassification": (
+                head_stability_metrics["classification"]
+            ),
+            "headStabilityConfidence": (
+                head_stability_metrics["confidence"]
+            ),
+            "headStabilityMeasurementCompleteness": (
+                head_stability_metrics[
+                    "measurementCompleteness"
+                ]["ratio"]
+            ),
+            "headStabilityIssueCount": (
+                head_stability_metrics["issueCount"]
+            ),
+            "headStabilityPrimaryIssue": (
+                head_stability_metrics["primaryIssue"]
+            ),
+            "headStabilityFeedbackStatus": (
+                head_stability_metrics["feedback"]["status"]
+            ),
+            "headStabilityFeedbackDeliveryStatus": (
+                head_stability_metrics["feedback"][
+                    "deliveryStatus"
+                ]
             ),
         },
     }

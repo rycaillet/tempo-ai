@@ -166,6 +166,12 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             posture_feedback = address_posture[
                 "feedback"
             ]
+            head_stability = metrics[
+                "headStability"
+            ]
+            head_stability_feedback = head_stability[
+                "feedback"
+            ]
 
             self.assertEqual(
                 summary["referenceFrameCount"],
@@ -420,6 +426,105 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                     "addressPostureFeedbackDeliveryStatus"
                 ],
                 "displayed",
+            )
+
+            self.assertIsInstance(
+                head_stability,
+                dict,
+            )
+            self.assertIn(
+                "classification",
+                head_stability,
+            )
+            self.assertIn(
+                "confidence",
+                head_stability,
+            )
+            self.assertIn(
+                "measurementCompleteness",
+                head_stability,
+            )
+            self.assertIn(
+                "issueCount",
+                head_stability,
+            )
+            self.assertIn(
+                "primaryIssue",
+                head_stability,
+            )
+            self.assertIn(
+                "measurements",
+                head_stability,
+            )
+            self.assertIn(
+                "findings",
+                head_stability,
+            )
+            self.assertIn(
+                "feedback",
+                head_stability,
+            )
+
+            self.assertEqual(
+                head_stability_feedback[
+                    "deliveryStatus"
+                ],
+                "displayed",
+            )
+            self.assertIsNone(
+                head_stability_feedback["disclaimer"]
+            )
+            self.assertIsNotNone(
+                head_stability_feedback["message"]
+            )
+            self.assertEqual(
+                head_stability_feedback[
+                    "eligibilityReason"
+                ],
+                eligibility["reason"],
+            )
+
+            self.assertEqual(
+                summary[
+                    "headStabilityClassification"
+                ],
+                head_stability["classification"],
+            )
+            self.assertEqual(
+                summary["headStabilityConfidence"],
+                head_stability["confidence"],
+            )
+            self.assertEqual(
+                summary[
+                    "headStabilityMeasurementCompleteness"
+                ],
+                head_stability[
+                    "measurementCompleteness"
+                ]["ratio"],
+            )
+            self.assertEqual(
+                summary["headStabilityIssueCount"],
+                head_stability["issueCount"],
+            )
+            self.assertEqual(
+                summary[
+                    "headStabilityPrimaryIssue"
+                ],
+                head_stability["primaryIssue"],
+            )
+            self.assertEqual(
+                summary[
+                    "headStabilityFeedbackStatus"
+                ],
+                head_stability_feedback["status"],
+            )
+            self.assertEqual(
+                summary[
+                    "headStabilityFeedbackDeliveryStatus"
+                ],
+                head_stability_feedback[
+                    "deliveryStatus"
+                ],
             )
 
             self.assertEqual(
