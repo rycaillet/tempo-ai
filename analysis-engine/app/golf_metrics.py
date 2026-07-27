@@ -21,6 +21,13 @@ from app.metrics.rotation import (
 from app.metrics.weight_shift import (
     build_weight_shift_metrics,
 )
+from app.metrics.registry import (
+    MetricContext,
+    MetricDefinition,
+    SummaryField,
+    build_registered_metric_summary,
+    build_registered_metrics,
+)
 
 Handedness = Literal["right", "left"]
 
@@ -1351,6 +1358,350 @@ def derive_output_path(
 
     return geometry_path.with_name(output_name)
 
+def build_registered_tempo(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_tempo_metrics(
+        context["references"]
+    )
+
+
+def build_registered_address_posture(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_address_posture_metrics(
+        references=context["references"],
+        frame_width=context["frame_width"],
+        frame_height=context["frame_height"],
+    )
+
+
+def build_registered_impact_position(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_impact_position_metrics(
+        references=context["references"],
+        frame_width=context["frame_width"],
+        frame_height=context["frame_height"],
+        handedness=context["handedness"],
+    )
+
+
+def build_registered_early_extension(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_early_extension_metrics(
+        references=context["references"],
+        frame_width=context["frame_width"],
+        frame_height=context["frame_height"],
+    )
+
+
+def build_registered_head_stability(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_head_stability_metrics(
+        references=context["references"],
+        frames=context["frames"],
+        frame_width=context["frame_width"],
+        frame_height=context["frame_height"],
+    )
+
+
+def build_registered_weight_shift(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_weight_shift_metrics(
+        references=context["references"],
+        frame_width=context["frame_width"],
+        frame_height=context["frame_height"],
+    )
+
+
+def build_registered_rotation(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_rotation_metrics(
+        references=context["references"],
+    )
+
+
+METRIC_REGISTRY = (
+    MetricDefinition(
+        key="tempo",
+        display_name="Tempo",
+        builder=build_registered_tempo,
+        summary_fields=(
+            SummaryField(
+                output_key="tempoRatio",
+                value_path=(
+                    "backswingToDownswingRatio",
+                ),
+            ),
+            SummaryField(
+                output_key="tempoClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="tempoConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key="tempoStatus",
+                value_path=("feedback", "status"),
+            ),
+        ),
+    ),
+    MetricDefinition(
+        key="addressPosture",
+        display_name="Address posture",
+        builder=build_registered_address_posture,
+        summary_fields=(
+            SummaryField(
+                output_key="addressPostureClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="addressPostureConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key="addressPostureIssueCount",
+                value_path=("issueCount",),
+            ),
+            SummaryField(
+                output_key="addressPosturePrimaryIssue",
+                value_path=("primaryIssue",),
+            ),
+            SummaryField(
+                output_key="addressPostureFeedbackStatus",
+                value_path=("feedback", "status"),
+            ),
+            SummaryField(
+                output_key=(
+                    "addressPostureFeedbackDeliveryStatus"
+                ),
+                value_path=(
+                    "feedback",
+                    "deliveryStatus",
+                ),
+            ),
+        ),
+    ),
+    MetricDefinition(
+        key="impactPosition",
+        display_name="Impact position",
+        builder=build_registered_impact_position,
+        summary_fields=(
+            SummaryField(
+                output_key="impactPositionClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="impactPositionConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key=(
+                    "impactPositionMeasurementCompleteness"
+                ),
+                value_path=(
+                    "measurementCompleteness",
+                    "ratio",
+                ),
+            ),
+            SummaryField(
+                output_key="impactPositionFeedbackStatus",
+                value_path=("feedback", "status"),
+            ),
+            SummaryField(
+                output_key=(
+                    "impactPositionFeedbackDeliveryStatus"
+                ),
+                value_path=(
+                    "feedback",
+                    "deliveryStatus",
+                ),
+            ),
+        ),
+    ),
+    MetricDefinition(
+        key="earlyExtension",
+        display_name="Early extension",
+        builder=build_registered_early_extension,
+        summary_fields=(
+            SummaryField(
+                output_key="earlyExtensionClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="earlyExtensionConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key=(
+                    "earlyExtensionMeasurementCompleteness"
+                ),
+                value_path=(
+                    "measurementCompleteness",
+                    "ratio",
+                ),
+            ),
+            SummaryField(
+                output_key="earlyExtensionIssueCount",
+                value_path=("issueCount",),
+            ),
+            SummaryField(
+                output_key="earlyExtensionPrimaryIssue",
+                value_path=("primaryIssue",),
+            ),
+            SummaryField(
+                output_key="earlyExtensionFeedbackStatus",
+                value_path=("feedback", "status"),
+            ),
+            SummaryField(
+                output_key=(
+                    "earlyExtensionFeedbackDeliveryStatus"
+                ),
+                value_path=(
+                    "feedback",
+                    "deliveryStatus",
+                ),
+            ),
+        ),
+    ),
+    MetricDefinition(
+        key="headStability",
+        display_name="Head stability",
+        builder=build_registered_head_stability,
+        summary_fields=(
+            SummaryField(
+                output_key="headStabilityClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="headStabilityConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key=(
+                    "headStabilityMeasurementCompleteness"
+                ),
+                value_path=(
+                    "measurementCompleteness",
+                    "ratio",
+                ),
+            ),
+            SummaryField(
+                output_key="headStabilityIssueCount",
+                value_path=("issueCount",),
+            ),
+            SummaryField(
+                output_key="headStabilityPrimaryIssue",
+                value_path=("primaryIssue",),
+            ),
+            SummaryField(
+                output_key="headStabilityFeedbackStatus",
+                value_path=("feedback", "status"),
+            ),
+            SummaryField(
+                output_key=(
+                    "headStabilityFeedbackDeliveryStatus"
+                ),
+                value_path=(
+                    "feedback",
+                    "deliveryStatus",
+                ),
+            ),
+        ),
+    ),
+    MetricDefinition(
+        key="weightShift",
+        display_name="Weight shift",
+        builder=build_registered_weight_shift,
+        summary_fields=(
+            SummaryField(
+                output_key="weightShiftClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="weightShiftConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key=(
+                    "weightShiftMeasurementCompleteness"
+                ),
+                value_path=(
+                    "measurementCompleteness",
+                    "ratio",
+                ),
+            ),
+            SummaryField(
+                output_key="weightShiftIssueCount",
+                value_path=("issueCount",),
+            ),
+            SummaryField(
+                output_key="weightShiftPrimaryIssue",
+                value_path=("primaryIssue",),
+            ),
+            SummaryField(
+                output_key="weightShiftFeedbackStatus",
+                value_path=("feedback", "status"),
+            ),
+            SummaryField(
+                output_key=(
+                    "weightShiftFeedbackDeliveryStatus"
+                ),
+                value_path=(
+                    "feedback",
+                    "deliveryStatus",
+                ),
+            ),
+        ),
+    ),
+    MetricDefinition(
+        key="rotation",
+        display_name="Rotation",
+        builder=build_registered_rotation,
+        summary_fields=(
+            SummaryField(
+                output_key="rotationClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="rotationConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key="rotationMeasurementCompleteness",
+                value_path=(
+                    "measurementCompleteness",
+                    "ratio",
+                ),
+            ),
+            SummaryField(
+                output_key="rotationIssueCount",
+                value_path=("issueCount",),
+            ),
+            SummaryField(
+                output_key="rotationPrimaryIssue",
+                value_path=("primaryIssue",),
+            ),
+            SummaryField(
+                output_key="rotationFeedbackStatus",
+                value_path=("feedback", "status"),
+            ),
+            SummaryField(
+                output_key="rotationFeedbackDeliveryStatus",
+                value_path=(
+                    "feedback",
+                    "deliveryStatus",
+                ),
+            ),
+        ),
+    ),
+)
 
 def analyze_golf_metrics(
     geometry_path: Path,
@@ -1459,96 +1810,25 @@ def analyze_golf_metrics(
         )
     )
 
-    tempo_metrics = build_tempo_metrics(references)
-
-    address_posture_metrics = (
-      build_address_posture_metrics(
-        references=references,
-        frame_width=frame_width,
-        frame_height=frame_height,
-      )
-    )
-
-    impact_position_metrics = (
-      build_impact_position_metrics(
-        references=references,
-        frame_width=frame_width,
-        frame_height=frame_height,
-        handedness=handedness,
-      )
-    )
-    
-    early_extension_metrics = (
-      build_early_extension_metrics(
-        references=references,
-        frame_width=frame_width,
-        frame_height=frame_height,
-      )
-    )
-
-    head_stability_metrics = build_head_stability_metrics(
-        references=references,
-        frames=frames,
-        frame_width=frame_width,
-        frame_height=frame_height,
-    )
-
-    weight_shift_metrics = build_weight_shift_metrics(
-        references=references,
-        frame_width=frame_width,
-        frame_height=frame_height,
-    )
-
-    rotation_metrics = build_rotation_metrics(
-        references=references,
-    )
-
     phase_validation = build_phase_validation(references)
 
     feedback_eligibility = build_feedback_eligibility(
         phase_validation
     )
 
-    tempo_metrics = apply_feedback_eligibility(
-        metrics=tempo_metrics,
-        feedback_eligibility=feedback_eligibility,
-        metric_name="Tempo",
-    )
+    metric_context: MetricContext = {
+        "references": references,
+        "frames": frames,
+        "frame_width": frame_width,
+        "frame_height": frame_height,
+        "handedness": handedness,
+    }
 
-    address_posture_metrics = apply_feedback_eligibility(
-        metrics=address_posture_metrics,
+    registered_metrics = build_registered_metrics(
+        definitions=METRIC_REGISTRY,
+        context=metric_context,
         feedback_eligibility=feedback_eligibility,
-        metric_name="Address posture",
-    )
-
-    impact_position_metrics = apply_feedback_eligibility(
-        metrics=impact_position_metrics,
-        feedback_eligibility=feedback_eligibility,
-        metric_name="Impact position",
-    )
-
-    early_extension_metrics = apply_feedback_eligibility(
-        metrics=early_extension_metrics,
-        feedback_eligibility=feedback_eligibility,
-        metric_name="Early extension",
-    )
-
-    head_stability_metrics = apply_feedback_eligibility(
-        metrics=head_stability_metrics,
-        feedback_eligibility=feedback_eligibility,
-        metric_name="Head stability",
-    )
-
-    weight_shift_metrics = apply_feedback_eligibility(
-        metrics=weight_shift_metrics,
-        feedback_eligibility=feedback_eligibility,
-        metric_name="Weight shift",
-    )
-
-    rotation_metrics = apply_feedback_eligibility(
-        metrics=rotation_metrics,
-        feedback_eligibility=feedback_eligibility,
-        metric_name="Rotation",
+        apply_feedback=apply_feedback_eligibility,
     )
 
     result = {
@@ -1617,13 +1897,7 @@ def analyze_golf_metrics(
         "metrics": {
             "phaseValidation": phase_validation,
             "feedbackEligibility": feedback_eligibility,
-            "tempo": tempo_metrics,
-            "addressPosture": address_posture_metrics,
-            "impactPosition": impact_position_metrics,
-            "earlyExtension": early_extension_metrics,
-            "headStability": head_stability_metrics,
-            "weightShift": weight_shift_metrics,
-            "rotation": rotation_metrics,
+            **registered_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
                 maximum_center_movements
@@ -1634,6 +1908,7 @@ def analyze_golf_metrics(
                 handedness,
             ),
         },
+        
         "summary": {
             "referenceFrameCount": len(references),
             "availableReferenceMeasurements": (
@@ -1655,16 +1930,6 @@ def analyze_golf_metrics(
                 for reference in references.values()
             ),
             "handednessAssumption": handedness,
-            "tempoRatio": tempo_metrics[
-                "backswingToDownswingRatio"
-            ],
-            "tempoClassification": tempo_metrics[
-                "classification"
-            ],
-            "tempoConfidence": tempo_metrics["confidence"],
-            "tempoStatus": tempo_metrics["feedback"][
-                "status"
-            ],
             "phaseValidationStatus": phase_validation[
                 "status"
             ],
@@ -1677,144 +1942,9 @@ def analyze_golf_metrics(
             "coachingFeedbackEligible": (
                 feedback_eligibility["eligible"]
             ),
-            "addressPostureClassification": (
-                address_posture_metrics["classification"]
-            ),
-            "addressPostureConfidence": (
-                address_posture_metrics["confidence"]
-            ),
-            "addressPostureIssueCount": (
-                address_posture_metrics["issueCount"]
-            ),
-            "addressPosturePrimaryIssue": (
-                address_posture_metrics["primaryIssue"]
-            ),
-            "addressPostureFeedbackStatus": (
-                address_posture_metrics["feedback"]["status"]
-            ),
-            "addressPostureFeedbackDeliveryStatus": (
-                address_posture_metrics["feedback"][
-                    "deliveryStatus"
-                ]
-            ),
-            "impactPositionClassification": (
-              impact_position_metrics["classification"]
-            ),
-            "impactPositionConfidence": (
-              impact_position_metrics["confidence"]
-            ),
-            "impactPositionMeasurementCompleteness": (
-              impact_position_metrics[
-                "measurementCompleteness"
-              ]["ratio"]
-            ),
-            "impactPositionFeedbackStatus": (
-              impact_position_metrics["feedback"]["status"]
-            ),
-            "impactPositionFeedbackDeliveryStatus": (
-              impact_position_metrics["feedback"][
-                "deliveryStatus"
-              ]
-            ),
-            "earlyExtensionClassification": (
-                early_extension_metrics["classification"]
-            ),
-            "earlyExtensionConfidence": (
-                early_extension_metrics["confidence"]
-            ),
-            "earlyExtensionMeasurementCompleteness": (
-                early_extension_metrics[
-                    "measurementCompleteness"
-                ]["ratio"]
-            ),
-            "earlyExtensionIssueCount": (
-                early_extension_metrics["issueCount"]
-            ),
-            "earlyExtensionPrimaryIssue": (
-                early_extension_metrics["primaryIssue"]
-            ),
-            "earlyExtensionFeedbackStatus": (
-                early_extension_metrics["feedback"]["status"]
-            ),
-            "earlyExtensionFeedbackDeliveryStatus": (
-                early_extension_metrics["feedback"][
-                    "deliveryStatus"
-                ]
-            ),
-            "headStabilityClassification": (
-                head_stability_metrics["classification"]
-            ),
-            "headStabilityConfidence": (
-                head_stability_metrics["confidence"]
-            ),
-            "headStabilityMeasurementCompleteness": (
-                head_stability_metrics[
-                    "measurementCompleteness"
-                ]["ratio"]
-            ),
-            "headStabilityIssueCount": (
-                head_stability_metrics["issueCount"]
-            ),
-            "headStabilityPrimaryIssue": (
-                head_stability_metrics["primaryIssue"]
-            ),
-            "headStabilityFeedbackStatus": (
-                head_stability_metrics["feedback"]["status"]
-            ),
-            "headStabilityFeedbackDeliveryStatus": (
-                head_stability_metrics["feedback"][
-                    "deliveryStatus"
-                ]
-            ),
-            "weightShiftClassification": (
-                weight_shift_metrics["classification"]
-            ),
-            "weightShiftConfidence": (
-                weight_shift_metrics["confidence"]
-            ),
-            "weightShiftMeasurementCompleteness": (
-                weight_shift_metrics[
-                    "measurementCompleteness"
-                ]["ratio"]
-            ),
-            "weightShiftIssueCount": (
-                weight_shift_metrics["issueCount"]
-            ),
-            "weightShiftPrimaryIssue": (
-                weight_shift_metrics["primaryIssue"]
-            ),
-            "weightShiftFeedbackStatus": (
-                weight_shift_metrics["feedback"]["status"]
-            ),
-            "weightShiftFeedbackDeliveryStatus": (
-                weight_shift_metrics["feedback"][
-                    "deliveryStatus"
-                ]
-            ),
-            "rotationClassification": (
-                rotation_metrics["classification"]
-            ),
-            "rotationConfidence": (
-                rotation_metrics["confidence"]
-            ),
-            "rotationMeasurementCompleteness": (
-                rotation_metrics[
-                    "measurementCompleteness"
-                ]["ratio"]
-            ),
-            "rotationIssueCount": (
-                rotation_metrics["issueCount"]
-            ),
-            "rotationPrimaryIssue": (
-                rotation_metrics["primaryIssue"]
-            ),
-            "rotationFeedbackStatus": (
-                rotation_metrics["feedback"]["status"]
-            ),
-            "rotationFeedbackDeliveryStatus": (
-                rotation_metrics["feedback"][
-                    "deliveryStatus"
-                ]
+            **build_registered_metric_summary(
+                definitions=METRIC_REGISTRY,
+                metric_results=registered_metrics,
             ),
         },
     }
