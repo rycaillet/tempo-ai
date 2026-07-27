@@ -7,6 +7,7 @@ from app.metrics.registry import (
     MetricRegistration,
     get_score_enabled_metric_registrations,
 )
+from app.scoring.interpretation import interpret_swing_score
 from app.scoring.normalization import (
     calculate_normalized_weight,
     calculate_percentage,
@@ -153,7 +154,6 @@ def calculate_swing_score(
             normalized_raw_score * configured_weight
         )
 
-        # Missing confidence is treated conservatively as zero confidence.
         weighted_confidence_total += (
             (confidence if confidence is not None else 0.0)
             * configured_weight
@@ -268,4 +268,9 @@ def calculate_swing_score(
         metrics=metric_scores,
     )
 
-    return swing_score.to_dict()
+    result = swing_score.to_dict()
+    result["interpretation"] = interpret_swing_score(
+        swing_score
+    ).to_dict()
+
+    return result
