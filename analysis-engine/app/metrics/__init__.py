@@ -6,3 +6,6 @@ from app.metrics.head_stability import (
 from app.metrics.impact_position import (
     build_impact_position_metrics,
 )
+from app.metrics.weight_shift import (
+    build_weight_shift_metrics,
+)

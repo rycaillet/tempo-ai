@@ -12,7 +12,9 @@ from app.metrics.head_stability import (
 from app.metrics.impact_position import (
     build_impact_position_metrics,
 )
-
+from app.metrics.weight_shift import (
+    build_weight_shift_metrics,
+)
 
 Handedness = Literal["right", "left"]
 
@@ -1477,6 +1479,12 @@ def analyze_golf_metrics(
         frame_height=frame_height,
     )
 
+    weight_shift_metrics = build_weight_shift_metrics(
+        references=references,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
+
     phase_validation = build_phase_validation(references)
 
     feedback_eligibility = build_feedback_eligibility(
@@ -1505,6 +1513,12 @@ def analyze_golf_metrics(
         metrics=head_stability_metrics,
         feedback_eligibility=feedback_eligibility,
         metric_name="Head stability",
+    )
+
+    weight_shift_metrics = apply_feedback_eligibility(
+        metrics=weight_shift_metrics,
+        feedback_eligibility=feedback_eligibility,
+        metric_name="Weight shift",
     )
 
     result = {
@@ -1577,6 +1591,7 @@ def analyze_golf_metrics(
             "addressPosture": address_posture_metrics,
             "impactPosition": impact_position_metrics,
             "headStability": head_stability_metrics,
+            "weightShift": weight_shift_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
                 maximum_center_movements
@@ -1691,6 +1706,31 @@ def analyze_golf_metrics(
             ),
             "headStabilityFeedbackDeliveryStatus": (
                 head_stability_metrics["feedback"][
+                    "deliveryStatus"
+                ]
+            ),
+            "weightShiftClassification": (
+                weight_shift_metrics["classification"]
+            ),
+            "weightShiftConfidence": (
+                weight_shift_metrics["confidence"]
+            ),
+            "weightShiftMeasurementCompleteness": (
+                weight_shift_metrics[
+                    "measurementCompleteness"
+                ]["ratio"]
+            ),
+            "weightShiftIssueCount": (
+                weight_shift_metrics["issueCount"]
+            ),
+            "weightShiftPrimaryIssue": (
+                weight_shift_metrics["primaryIssue"]
+            ),
+            "weightShiftFeedbackStatus": (
+                weight_shift_metrics["feedback"]["status"]
+            ),
+            "weightShiftFeedbackDeliveryStatus": (
+                weight_shift_metrics["feedback"][
                     "deliveryStatus"
                 ]
             ),

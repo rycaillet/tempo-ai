@@ -172,6 +172,10 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             head_stability_feedback = head_stability[
                 "feedback"
             ]
+            weight_shift = metrics["weightShift"]
+            weight_shift_feedback = weight_shift[
+                "feedback"
+            ]
 
             self.assertEqual(
                 summary["referenceFrameCount"],
@@ -527,6 +531,157 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                 ],
             )
 
+            self.assertIsInstance(
+                weight_shift,
+                dict,
+            )
+            self.assertIn(
+                "classification",
+                weight_shift,
+            )
+            self.assertIn(
+                "confidence",
+                weight_shift,
+            )
+            self.assertIn(
+                "measurementCompleteness",
+                weight_shift,
+            )
+            self.assertIn(
+                "issueCount",
+                weight_shift,
+            )
+            self.assertIn(
+                "primaryIssue",
+                weight_shift,
+            )
+            self.assertIn(
+                "referenceFrames",
+                weight_shift,
+            )
+            self.assertIn(
+                "measurements",
+                weight_shift,
+            )
+            self.assertIn(
+                "findings",
+                weight_shift,
+            )
+            self.assertIn(
+                "feedback",
+                weight_shift,
+            )
+
+            self.assertEqual(
+                weight_shift[
+                    "measurementCompleteness"
+                ],
+                {
+                    "available": 5,
+                    "total": 5,
+                    "ratio": 1.0,
+                },
+            )
+            self.assertEqual(
+                weight_shift["confidence"],
+                1.0,
+            )
+
+            self.assertIn(
+                weight_shift["classification"],
+                {
+                    "neutral",
+                    "needs_attention",
+                },
+            )
+            self.assertGreaterEqual(
+                weight_shift["issueCount"],
+                0,
+            )
+
+            weight_shift_measurements = weight_shift[
+                "measurements"
+            ]
+
+            self.assertIn(
+                "addressToTop",
+                weight_shift_measurements,
+            )
+            self.assertIn(
+                "topToDownswingStart",
+                weight_shift_measurements,
+            )
+            self.assertIn(
+                "topToImpact",
+                weight_shift_measurements,
+            )
+            self.assertIn(
+                "addressToImpact",
+                weight_shift_measurements,
+            )
+            self.assertIn(
+                "impactToFinish",
+                weight_shift_measurements,
+            )
+
+            self.assertEqual(
+                weight_shift_feedback[
+                    "deliveryStatus"
+                ],
+                "displayed",
+            )
+            self.assertIsNone(
+                weight_shift_feedback["disclaimer"]
+            )
+            self.assertIsNotNone(
+                weight_shift_feedback["message"]
+            )
+            self.assertEqual(
+                weight_shift_feedback[
+                    "eligibilityReason"
+                ],
+                eligibility["reason"],
+            )
+
+            self.assertEqual(
+                summary[
+                    "weightShiftClassification"
+                ],
+                weight_shift["classification"],
+            )
+            self.assertEqual(
+                summary["weightShiftConfidence"],
+                weight_shift["confidence"],
+            )
+            self.assertEqual(
+                summary[
+                    "weightShiftMeasurementCompleteness"
+                ],
+                weight_shift[
+                    "measurementCompleteness"
+                ]["ratio"],
+            )
+            self.assertEqual(
+                summary["weightShiftIssueCount"],
+                weight_shift["issueCount"],
+            )
+            self.assertEqual(
+                summary["weightShiftPrimaryIssue"],
+                weight_shift["primaryIssue"],
+            )
+            self.assertEqual(
+                summary["weightShiftFeedbackStatus"],
+                weight_shift_feedback["status"],
+            )
+            self.assertEqual(
+                summary[
+                    "weightShiftFeedbackDeliveryStatus"
+                ],
+                weight_shift_feedback[
+                    "deliveryStatus"
+                ],
+            )
+
             self.assertEqual(
                 result["phaseFrames"][
                     "addressReference"
@@ -558,6 +713,14 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             )
             self.assertIn(
                 "addressPosture",
+                metrics,
+            )
+            self.assertIn(
+                "headStability",
+                metrics,
+            )
+            self.assertIn(
+                "weightShift",
                 metrics,
             )
 
