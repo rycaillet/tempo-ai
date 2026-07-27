@@ -6,6 +6,9 @@ import math
 from pathlib import Path
 from typing import Any, Literal
 
+from app.metrics.early_extension import (
+    build_early_extension_metrics,
+)
 from app.metrics.head_stability import (
     build_head_stability_metrics,
 )
@@ -1471,6 +1474,14 @@ def analyze_golf_metrics(
         handedness=handedness,
       )
     )
+    
+    early_extension_metrics = (
+      build_early_extension_metrics(
+        references=references,
+        frame_width=frame_width,
+        frame_height=frame_height,
+      )
+    )
 
     head_stability_metrics = build_head_stability_metrics(
         references=references,
@@ -1507,6 +1518,12 @@ def analyze_golf_metrics(
         metrics=impact_position_metrics,
         feedback_eligibility=feedback_eligibility,
         metric_name="Impact position",
+    )
+
+    early_extension_metrics = apply_feedback_eligibility(
+        metrics=early_extension_metrics,
+        feedback_eligibility=feedback_eligibility,
+        metric_name="Early extension",
     )
 
     head_stability_metrics = apply_feedback_eligibility(
@@ -1590,6 +1607,7 @@ def analyze_golf_metrics(
             "tempo": tempo_metrics,
             "addressPosture": address_posture_metrics,
             "impactPosition": impact_position_metrics,
+            "earlyExtension": early_extension_metrics,
             "headStability": head_stability_metrics,
             "weightShift": weight_shift_metrics,
             "transitions": transitions,
@@ -1683,6 +1701,31 @@ def analyze_golf_metrics(
               impact_position_metrics["feedback"][
                 "deliveryStatus"
               ]
+            ),
+            "earlyExtensionClassification": (
+                early_extension_metrics["classification"]
+            ),
+            "earlyExtensionConfidence": (
+                early_extension_metrics["confidence"]
+            ),
+            "earlyExtensionMeasurementCompleteness": (
+                early_extension_metrics[
+                    "measurementCompleteness"
+                ]["ratio"]
+            ),
+            "earlyExtensionIssueCount": (
+                early_extension_metrics["issueCount"]
+            ),
+            "earlyExtensionPrimaryIssue": (
+                early_extension_metrics["primaryIssue"]
+            ),
+            "earlyExtensionFeedbackStatus": (
+                early_extension_metrics["feedback"]["status"]
+            ),
+            "earlyExtensionFeedbackDeliveryStatus": (
+                early_extension_metrics["feedback"][
+                    "deliveryStatus"
+                ]
             ),
             "headStabilityClassification": (
                 head_stability_metrics["classification"]
