@@ -24,10 +24,13 @@ from app.metrics.weight_shift import (
 from app.metrics.registry import (
     MetricContext,
     MetricDefinition,
+    MetricRegistration,
     SummaryField,
     build_registered_metric_summary,
     build_registered_metrics,
+    validate_scoring_weights,
 )
+from app.scoring import calculate_swing_score
 
 Handedness = Literal["right", "left"]
 
@@ -1426,7 +1429,7 @@ def build_registered_rotation(
     )
 
 
-METRIC_REGISTRY = (
+METRIC_DEFINITIONS = (
     MetricDefinition(
         key="tempo",
         display_name="Tempo",
@@ -1703,6 +1706,32 @@ METRIC_REGISTRY = (
     ),
 )
 
+METRIC_SCORING_WEIGHTS = {
+    "tempo": 15.0,
+    "addressPosture": 10.0,
+    "impactPosition": 20.0,
+    "earlyExtension": 15.0,
+    "headStability": 10.0,
+    "weightShift": 15.0,
+    "rotation": 15.0,
+}
+
+
+METRIC_REGISTRY = tuple(
+    MetricRegistration(
+        definition=definition,
+        enabled=True,
+        version="1.0.0",
+        scoring_weight=METRIC_SCORING_WEIGHTS[
+            definition.key
+        ],
+    )
+    for definition in METRIC_DEFINITIONS
+)
+
+
+validate_scoring_weights(METRIC_REGISTRY)
+
 def analyze_golf_metrics(
     geometry_path: Path,
     refined_phases_path: Path,
@@ -1825,10 +1854,15 @@ def analyze_golf_metrics(
     }
 
     registered_metrics = build_registered_metrics(
-        definitions=METRIC_REGISTRY,
+        registrations=METRIC_REGISTRY,
         context=metric_context,
         feedback_eligibility=feedback_eligibility,
         apply_feedback=apply_feedback_eligibility,
+    )
+
+    scoring = calculate_swing_score(
+        registrations=METRIC_REGISTRY,
+        metric_results=registered_metrics,
     )
 
     result = {
@@ -1908,7 +1942,7 @@ def analyze_golf_metrics(
                 handedness,
             ),
         },
-        
+        "scoring": scoring,
         "summary": {
             "referenceFrameCount": len(references),
             "availableReferenceMeasurements": (
@@ -1943,7 +1977,7 @@ def analyze_golf_metrics(
                 feedback_eligibility["eligible"]
             ),
             **build_registered_metric_summary(
-                definitions=METRIC_REGISTRY,
+                registrations=METRIC_REGISTRY,
                 metric_results=registered_metrics,
             ),
         },
@@ -1960,6 +1994,7 @@ def analyze_golf_metrics(
     return {
         "success": True,
         "summary": result["summary"],
+        "scoring": result["scoring"],
         "phaseFrames": result["phaseFrames"],
         "golfMetricsPath": str(
             resolved_output_path.resolve()
