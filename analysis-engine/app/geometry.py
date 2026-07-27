@@ -68,6 +68,10 @@ class FrameGeometry(TypedDict):
     headCenter: GeometryPoint | None
     shoulderCenter: GeometryPoint | None
     hipCenter: GeometryPoint | None
+    leftShoulder: GeometryPoint | None
+    rightShoulder: GeometryPoint | None
+    leftHip: GeometryPoint | None
+    rightHip: GeometryPoint | None
     leftWrist: GeometryPoint | None
     rightWrist: GeometryPoint | None
     shoulderWidth: float | None
@@ -506,6 +510,10 @@ def create_empty_geometry() -> FrameGeometry:
         "headCenter": None,
         "shoulderCenter": None,
         "hipCenter": None,
+        "leftShoulder": None,
+        "rightShoulder": None,
+        "leftHip": None,
+        "rightHip": None,
         "leftWrist": None,
         "rightWrist": None,
         "shoulderWidth": None,
@@ -642,6 +650,10 @@ def calculate_frame_geometry(
         "headCenter": head_center,
         "shoulderCenter": shoulder_center,
         "hipCenter": hip_center,
+        "leftShoulder": landmark_to_point(left_shoulder),
+        "rightShoulder": landmark_to_point(right_shoulder),
+        "leftHip": landmark_to_point(left_hip),
+        "rightHip": landmark_to_point(right_hip),
         "leftWrist": landmark_to_point(left_wrist),
         "rightWrist": landmark_to_point(right_wrist),
         "shoulderWidth": round_optional(shoulder_width),

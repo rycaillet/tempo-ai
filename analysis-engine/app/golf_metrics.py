@@ -15,6 +15,9 @@ from app.metrics.head_stability import (
 from app.metrics.impact_position import (
     build_impact_position_metrics,
 )
+from app.metrics.rotation import (
+    build_rotation_metrics,
+)
 from app.metrics.weight_shift import (
     build_weight_shift_metrics,
 )
@@ -1496,6 +1499,10 @@ def analyze_golf_metrics(
         frame_height=frame_height,
     )
 
+    rotation_metrics = build_rotation_metrics(
+        references=references,
+    )
+
     phase_validation = build_phase_validation(references)
 
     feedback_eligibility = build_feedback_eligibility(
@@ -1536,6 +1543,12 @@ def analyze_golf_metrics(
         metrics=weight_shift_metrics,
         feedback_eligibility=feedback_eligibility,
         metric_name="Weight shift",
+    )
+
+    rotation_metrics = apply_feedback_eligibility(
+        metrics=rotation_metrics,
+        feedback_eligibility=feedback_eligibility,
+        metric_name="Rotation",
     )
 
     result = {
@@ -1610,6 +1623,7 @@ def analyze_golf_metrics(
             "earlyExtension": early_extension_metrics,
             "headStability": head_stability_metrics,
             "weightShift": weight_shift_metrics,
+            "rotation": rotation_metrics,
             "transitions": transitions,
             "maximumMovementFromAddressReference": (
                 maximum_center_movements
@@ -1774,6 +1788,31 @@ def analyze_golf_metrics(
             ),
             "weightShiftFeedbackDeliveryStatus": (
                 weight_shift_metrics["feedback"][
+                    "deliveryStatus"
+                ]
+            ),
+            "rotationClassification": (
+                rotation_metrics["classification"]
+            ),
+            "rotationConfidence": (
+                rotation_metrics["confidence"]
+            ),
+            "rotationMeasurementCompleteness": (
+                rotation_metrics[
+                    "measurementCompleteness"
+                ]["ratio"]
+            ),
+            "rotationIssueCount": (
+                rotation_metrics["issueCount"]
+            ),
+            "rotationPrimaryIssue": (
+                rotation_metrics["primaryIssue"]
+            ),
+            "rotationFeedbackStatus": (
+                rotation_metrics["feedback"]["status"]
+            ),
+            "rotationFeedbackDeliveryStatus": (
+                rotation_metrics["feedback"][
                     "deliveryStatus"
                 ]
             ),

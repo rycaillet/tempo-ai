@@ -25,6 +25,37 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
     ) -> dict[str, object]:
         progress = (frame_index - 65) / 52
 
+        rotation_depths = {
+            65: {
+                "shoulder": 0.02,
+                "hip": 0.01,
+            },
+            67: {
+                "shoulder": 0.10,
+                "hip": 0.04,
+            },
+            93: {
+                "shoulder": 0.28,
+                "hip": 0.12,
+            },
+            102: {
+                "shoulder": 0.20,
+                "hip": 0.10,
+            },
+            107: {
+                "shoulder": 0.06,
+                "hip": 0.04,
+            },
+            117: {
+                "shoulder": -0.20,
+                "hip": -0.10,
+            },
+        }
+
+        depth = rotation_depths[frame_index]
+        shoulder_depth = depth["shoulder"]
+        hip_depth = depth["hip"]
+
         return {
             "headCenter": {
                 "x": 0.50 + (0.01 * progress),
@@ -37,6 +68,30 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             "hipCenter": {
                 "x": 0.50 + (0.015 * progress),
                 "y": 0.58,
+            },
+            "leftShoulder": {
+                "x": 0.42 + (0.02 * progress),
+                "y": 0.38,
+                "z": -(shoulder_depth / 2.0),
+                "visibility": 0.99,
+            },
+            "rightShoulder": {
+                "x": 0.58 + (0.02 * progress),
+                "y": 0.38,
+                "z": shoulder_depth / 2.0,
+                "visibility": 0.99,
+            },
+            "leftHip": {
+                "x": 0.45 + (0.015 * progress),
+                "y": 0.58,
+                "z": -(hip_depth / 2.0),
+                "visibility": 0.99,
+            },
+            "rightHip": {
+                "x": 0.55 + (0.015 * progress),
+                "y": 0.58,
+                "z": hip_depth / 2.0,
+                "visibility": 0.99,
             },
             "spineAngle": 42.0 + (4.0 * progress),
             "shoulderTilt": 5.0 + (12.0 * progress),
@@ -176,6 +231,8 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             weight_shift_feedback = weight_shift[
                 "feedback"
             ]
+            rotation = metrics["rotation"]
+            rotation_feedback = rotation["feedback"]
 
             self.assertEqual(
                 summary["referenceFrameCount"],
@@ -678,6 +735,229 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                     "weightShiftFeedbackDeliveryStatus"
                 ],
                 weight_shift_feedback[
+                    "deliveryStatus"
+                ],
+            )
+
+            self.assertIsInstance(
+                rotation,
+                dict,
+            )
+            self.assertIn(
+                "classification",
+                rotation,
+            )
+            self.assertIn(
+                "confidence",
+                rotation,
+            )
+            self.assertIn(
+                "measurementCompleteness",
+                rotation,
+            )
+            self.assertIn(
+                "issueCount",
+                rotation,
+            )
+            self.assertIn(
+                "primaryIssue",
+                rotation,
+            )
+            self.assertIn(
+                "referenceFrames",
+                rotation,
+            )
+            self.assertIn(
+                "measurements",
+                rotation,
+            )
+            self.assertIn(
+                "findings",
+                rotation,
+            )
+            self.assertIn(
+                "feedback",
+                rotation,
+            )
+
+            self.assertEqual(
+                rotation[
+                    "measurementCompleteness"
+                ]["ratio"],
+                1.0,
+            )
+            self.assertGreater(
+                rotation["confidence"],
+                0.0,
+            )
+            self.assertLessEqual(
+                rotation["confidence"],
+                1.0,
+            )
+            self.assertIn(
+                rotation["classification"],
+                {
+                    "neutral",
+                    "needs_attention",
+                    "incomplete",
+                },
+            )
+            self.assertGreaterEqual(
+                rotation["issueCount"],
+                0,
+            )
+
+            rotation_measurements = rotation[
+                "measurements"
+            ]
+
+            self.assertIn(
+                "states",
+                rotation_measurements,
+            )
+            self.assertIn(
+                "changesFromAddress",
+                rotation_measurements,
+            )
+            self.assertIn(
+                "impactShoulderReturnRatio",
+                rotation_measurements,
+            )
+
+            rotation_states = rotation_measurements[
+                "states"
+            ]
+            rotation_changes = rotation_measurements[
+                "changesFromAddress"
+            ]
+
+            self.assertEqual(
+                set(rotation_states),
+                {
+                    "address",
+                    "topOfBackswing",
+                    "downswingStart",
+                    "impact",
+                    "finish",
+                },
+            )
+            self.assertEqual(
+                set(rotation_changes),
+                {
+                    "topOfBackswing",
+                    "downswingStart",
+                    "impact",
+                    "finish",
+                },
+            )
+
+            for state_name in (
+                "address",
+                "topOfBackswing",
+                "downswingStart",
+                "impact",
+                "finish",
+            ):
+                state = rotation_states[state_name]
+
+                self.assertIn(
+                    "shoulders",
+                    state,
+                )
+                self.assertIn(
+                    "hips",
+                    state,
+                )
+                self.assertIn(
+                    "shoulderHipSeparationProxy",
+                    state,
+                )
+
+                self.assertIn(
+                    "depthSeparationNormalized",
+                    state["shoulders"],
+                )
+                self.assertIn(
+                    "depthSeparationNormalized",
+                    state["hips"],
+                )
+
+            for change_name in (
+                "topOfBackswing",
+                "downswingStart",
+                "impact",
+                "finish",
+            ):
+                change = rotation_changes[change_name]
+
+                self.assertIn(
+                    "shoulderDepthChangeNormalized",
+                    change,
+                )
+                self.assertIn(
+                    "hipDepthChangeNormalized",
+                    change,
+                )
+                self.assertIn(
+                    "shoulderHipRotationSeparationProxy",
+                    change,
+                )
+
+            self.assertAlmostEqual(
+                rotation_measurements[
+                    "impactShoulderReturnRatio"
+                ],
+                0.846154,
+            )
+
+            self.assertEqual(
+                rotation_feedback["deliveryStatus"],
+                "displayed",
+            )
+            self.assertIsNone(
+                rotation_feedback["disclaimer"]
+            )
+            self.assertIsNotNone(
+                rotation_feedback["message"]
+            )
+            self.assertEqual(
+                rotation_feedback["eligibilityReason"],
+                eligibility["reason"],
+            )
+
+            self.assertEqual(
+                summary["rotationClassification"],
+                rotation["classification"],
+            )
+            self.assertEqual(
+                summary["rotationConfidence"],
+                rotation["confidence"],
+            )
+            self.assertEqual(
+                summary[
+                    "rotationMeasurementCompleteness"
+                ],
+                rotation[
+                    "measurementCompleteness"
+                ]["ratio"],
+            )
+            self.assertEqual(
+                summary["rotationIssueCount"],
+                rotation["issueCount"],
+            )
+            self.assertEqual(
+                summary["rotationPrimaryIssue"],
+                rotation["primaryIssue"],
+            )
+            self.assertEqual(
+                summary["rotationFeedbackStatus"],
+                rotation_feedback["status"],
+            )
+            self.assertEqual(
+                summary[
+                    "rotationFeedbackDeliveryStatus"
+                ],
+                rotation_feedback[
                     "deliveryStatus"
                 ],
             )
