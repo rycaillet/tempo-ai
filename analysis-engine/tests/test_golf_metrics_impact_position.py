@@ -377,7 +377,7 @@ class ImpactPositionMetricsTests(
                 handedness="right",
             )
 
-    def test_feedback_is_not_classified_yet(
+    def test_collapsed_lead_arm_needs_attention(
         self,
     ) -> None:
         result = build_impact_position_metrics(
@@ -388,15 +388,298 @@ class ImpactPositionMetricsTests(
         )
 
         self.assertEqual(
+            result["findings"]["leadArm"]["status"],
+            "collapsed",
+        )
+        self.assertEqual(
             result["classification"],
-            "unclassified",
+            "needs_attention",
+        )
+        self.assertEqual(
+            result["issueCount"],
+            1,
+        )
+        self.assertEqual(
+            result["primaryIssue"],
+            "leadArm",
         )
         self.assertEqual(
             result["feedback"]["status"],
-            "not_available",
+            "outside_target",
+        )
+        self.assertIsNotNone(
+            result["feedback"]["message"]
+        )
+
+    def test_neutral_impact_position_is_within_target(
+        self,
+    ) -> None:
+        references = self.build_references()
+
+        references[
+            "impactReference"
+        ]["geometry"]["leftElbowAngle"] = 165.0
+
+        result = build_impact_position_metrics(
+            references=references,
+            frame_width=1920,
+            frame_height=1080,
+            handedness="right",
+        )
+
+        self.assertEqual(
+            result["findings"]["spineAngle"][
+                "status"
+            ],
+            "maintained",
+        )
+        self.assertEqual(
+            result["findings"]["headMovement"][
+                "status"
+            ],
+            "stable",
+        )
+        self.assertEqual(
+            result["findings"]["shoulderMovement"][
+                "status"
+            ],
+            "stable",
+        )
+        self.assertEqual(
+            result["findings"]["hipMovement"][
+                "status"
+            ],
+            "stable",
+        )
+        self.assertEqual(
+            result["findings"]["leadArm"][
+                "status"
+            ],
+            "extended",
+        )
+        self.assertEqual(
+            result["findings"]["trailArm"][
+                "status"
+            ],
+            "within_target",
+        )
+        self.assertEqual(
+            result["classification"],
+            "neutral",
+        )
+        self.assertEqual(
+            result["issueCount"],
+            0,
         )
         self.assertIsNone(
-            result["feedback"]["message"]
+            result["primaryIssue"]
+        )
+        self.assertEqual(
+            result["feedback"]["status"],
+            "within_target",
+        )
+
+    def test_excessive_spine_angle_loss_is_identified(
+        self,
+    ) -> None:
+        references = self.build_references()
+
+        impact_geometry = references[
+            "impactReference"
+        ]["geometry"]
+
+        impact_geometry["spineAngle"] = 15.0
+        impact_geometry["leftElbowAngle"] = 165.0
+
+        result = build_impact_position_metrics(
+            references=references,
+            frame_width=1920,
+            frame_height=1080,
+            handedness="right",
+        )
+
+        self.assertEqual(
+            result["findings"]["spineAngle"][
+                "status"
+            ],
+            "excessive_loss",
+        )
+        self.assertEqual(
+            result["classification"],
+            "needs_attention",
+        )
+        self.assertEqual(
+            result["primaryIssue"],
+            "spineAngle",
+        )
+
+    def test_excessive_center_movements_are_identified(
+        self,
+    ) -> None:
+        references = self.build_references()
+
+        impact_geometry = references[
+            "impactReference"
+        ]["geometry"]
+
+        impact_geometry["headCenter"] = {
+            "x": 0.80,
+            "y": 0.20,
+        }
+        impact_geometry["shoulderCenter"] = {
+            "x": 0.80,
+            "y": 0.38,
+        }
+        impact_geometry["hipCenter"] = {
+            "x": 0.80,
+            "y": 0.58,
+        }
+        impact_geometry["leftElbowAngle"] = 165.0
+
+        result = build_impact_position_metrics(
+            references=references,
+            frame_width=1920,
+            frame_height=1080,
+            handedness="right",
+        )
+
+        self.assertEqual(
+            result["findings"]["headMovement"][
+                "status"
+            ],
+            "excessive",
+        )
+        self.assertEqual(
+            result["findings"]["shoulderMovement"][
+                "status"
+            ],
+            "excessive",
+        )
+        self.assertEqual(
+            result["findings"]["hipMovement"][
+                "status"
+            ],
+            "excessive",
+        )
+        self.assertEqual(
+            result["classification"],
+            "needs_attention",
+        )
+        self.assertEqual(
+            result["issueCount"],
+            3,
+        )
+        self.assertEqual(
+            result["primaryIssue"],
+            "headMovement",
+        )
+
+    def test_trail_arm_issues_are_identified(
+        self,
+    ) -> None:
+        references = self.build_references()
+
+        impact_geometry = references[
+            "impactReference"
+        ]["geometry"]
+
+        impact_geometry["leftElbowAngle"] = 165.0
+        impact_geometry["rightElbowAngle"] = 95.0
+
+        result = build_impact_position_metrics(
+            references=references,
+            frame_width=1920,
+            frame_height=1080,
+            handedness="right",
+        )
+
+        self.assertEqual(
+            result["findings"]["trailArm"][
+                "status"
+            ],
+            "excessively_bent",
+        )
+        self.assertEqual(
+            result["classification"],
+            "needs_attention",
+        )
+        self.assertEqual(
+            result["primaryIssue"],
+            "trailArm",
+        )
+
+        impact_geometry["rightElbowAngle"] = 175.0
+
+        result = build_impact_position_metrics(
+            references=references,
+            frame_width=1920,
+            frame_height=1080,
+            handedness="right",
+        )
+
+        self.assertEqual(
+            result["findings"]["trailArm"][
+                "status"
+            ],
+            "overextended",
+        )
+        self.assertEqual(
+            result["classification"],
+            "needs_attention",
+        )
+
+    def test_missing_findings_produce_incomplete_result(
+        self,
+    ) -> None:
+        references = self.build_references()
+
+        impact_geometry = references[
+            "impactReference"
+        ]["geometry"]
+
+        del impact_geometry["spineAngle"]
+        del impact_geometry["headCenter"]
+        del impact_geometry["leftElbowAngle"]
+
+        result = build_impact_position_metrics(
+            references=references,
+            frame_width=1920,
+            frame_height=1080,
+            handedness="right",
+        )
+
+        self.assertEqual(
+            result["findings"]["spineAngle"][
+                "status"
+            ],
+            "not_available",
+        )
+        self.assertEqual(
+            result["findings"]["headMovement"][
+                "status"
+            ],
+            "not_available",
+        )
+        self.assertEqual(
+            result["findings"]["leadArm"][
+                "status"
+            ],
+            "not_available",
+        )
+        self.assertEqual(
+            result["classification"],
+            "incomplete",
+        )
+        self.assertEqual(
+            result["issueCount"],
+            0,
+        )
+        self.assertIsNone(
+            result["primaryIssue"]
+        )
+        self.assertEqual(
+            result["feedback"]["status"],
+            "insufficient_data",
         )
 
 

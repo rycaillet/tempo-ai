@@ -1485,6 +1485,12 @@ def analyze_golf_metrics(
         metric_name="Address posture",
     )
 
+    impact_position_metrics = apply_feedback_eligibility(
+        metrics=impact_position_metrics,
+        feedback_eligibility=feedback_eligibility,
+        metric_name="Impact position",
+    )
+
     result = {
         "sourceVideo": geometry_data.get("sourceVideo"),
         "inputs": {
@@ -1640,6 +1646,11 @@ def analyze_golf_metrics(
             ),
             "impactPositionFeedbackStatus": (
               impact_position_metrics["feedback"]["status"]
+            ),
+            "impactPositionFeedbackDeliveryStatus": (
+              impact_position_metrics["feedback"][
+                "deliveryStatus"
+              ]
             ),
         },
     }

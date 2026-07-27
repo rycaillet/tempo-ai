@@ -180,6 +180,211 @@ def build_reference_metadata(
     }
 
 
+def build_spine_angle_finding(
+    spine_angle_change: float | None,
+) -> dict[str, Any]:
+    if spine_angle_change is None:
+        return {
+            "status": "not_available",
+            "value": None,
+            "targetRange": {
+                "minimum": -10.0,
+                "maximum": 10.0,
+            },
+            "message": (
+                "Spine-angle change could not be measured "
+                "between address and impact."
+            ),
+        }
+
+    if spine_angle_change < -20.0:
+        status = "excessive_loss"
+        message = (
+            "Your measured spine angle decreased substantially "
+            "between address and impact. This may indicate a "
+            "significant loss of posture."
+        )
+    elif spine_angle_change < -10.0:
+        status = "moderate_loss"
+        message = (
+            "Your measured spine angle decreased moderately "
+            "between address and impact."
+        )
+    elif spine_angle_change > 20.0:
+        status = "excessive_gain"
+        message = (
+            "Your measured spine angle increased substantially "
+            "between address and impact. This may indicate "
+            "excessive forward bend."
+        )
+    elif spine_angle_change > 10.0:
+        status = "moderate_gain"
+        message = (
+            "Your measured spine angle increased moderately "
+            "between address and impact."
+        )
+    else:
+        status = "maintained"
+        message = (
+            "Your measured spine angle remained relatively "
+            "stable from address through impact."
+        )
+
+    return {
+        "status": status,
+        "value": round_value(spine_angle_change),
+        "targetRange": {
+            "minimum": -10.0,
+            "maximum": 10.0,
+        },
+        "message": message,
+    }
+
+
+def build_movement_finding(
+    *,
+    value: float | None,
+    stable_maximum: float,
+    moderate_maximum: float,
+    body_part_name: str,
+) -> dict[str, Any]:
+    if value is None:
+        return {
+            "status": "not_available",
+            "value": None,
+            "targetRange": {
+                "stableMaximum": stable_maximum,
+                "moderateMaximum": moderate_maximum,
+            },
+            "message": (
+                f"{body_part_name} movement from address "
+                "could not be measured."
+            ),
+        }
+
+    if value <= stable_maximum:
+        status = "stable"
+        message = (
+            f"{body_part_name} movement remained within the "
+            "current prototype stability range."
+        )
+    elif value <= moderate_maximum:
+        status = "moderate"
+        message = (
+            f"{body_part_name} movement was moderate between "
+            "address and impact."
+        )
+    else:
+        status = "excessive"
+        message = (
+            f"{body_part_name} movement was substantial between "
+            "address and impact. Review the swing for excessive "
+            "body displacement."
+        )
+
+    return {
+        "status": status,
+        "value": round_value(value),
+        "targetRange": {
+            "stableMaximum": stable_maximum,
+            "moderateMaximum": moderate_maximum,
+        },
+        "message": message,
+    }
+
+
+def build_lead_arm_finding(
+    lead_arm_angle: float | None,
+) -> dict[str, Any]:
+    if lead_arm_angle is None:
+        return {
+            "status": "not_available",
+            "value": None,
+            "targetRange": {
+                "minimumExtended": 160.0,
+                "minimumSlightlyBent": 145.0,
+            },
+            "message": (
+                "Lead-arm angle at impact could not be measured."
+            ),
+        }
+
+    if lead_arm_angle >= 160.0:
+        status = "extended"
+        message = (
+            "The lead arm remained extended at the measured "
+            "impact reference."
+        )
+    elif lead_arm_angle >= 145.0:
+        status = "slightly_bent"
+        message = (
+            "The lead arm was slightly bent at the measured "
+            "impact reference."
+        )
+    else:
+        status = "collapsed"
+        message = (
+            "The lead arm appeared significantly bent at the "
+            "measured impact reference."
+        )
+
+    return {
+        "status": status,
+        "value": round_value(lead_arm_angle),
+        "targetRange": {
+            "minimumExtended": 160.0,
+            "minimumSlightlyBent": 145.0,
+        },
+        "message": message,
+    }
+
+
+def build_trail_arm_finding(
+    trail_arm_angle: float | None,
+) -> dict[str, Any]:
+    if trail_arm_angle is None:
+        return {
+            "status": "not_available",
+            "value": None,
+            "targetRange": {
+                "minimum": 110.0,
+                "maximum": 170.0,
+            },
+            "message": (
+                "Trail-arm angle at impact could not be measured."
+            ),
+        }
+
+    if trail_arm_angle < 110.0:
+        status = "excessively_bent"
+        message = (
+            "The trail arm appeared heavily bent at the measured "
+            "impact reference."
+        )
+    elif trail_arm_angle > 170.0:
+        status = "overextended"
+        message = (
+            "The trail arm appeared nearly fully extended at the "
+            "measured impact reference."
+        )
+    else:
+        status = "within_target"
+        message = (
+            "The trail-arm angle was within the current "
+            "prototype impact range."
+        )
+
+    return {
+        "status": status,
+        "value": round_value(trail_arm_angle),
+        "targetRange": {
+            "minimum": 110.0,
+            "maximum": 170.0,
+        },
+        "message": message,
+    }
+
+
 def build_impact_position_metrics(
     references: dict[str, dict[str, Any]],
     frame_width: float,
@@ -342,6 +547,93 @@ def build_impact_position_metrics(
     if not required_frames_have_pose:
         confidence *= 0.75
 
+    findings = {
+        "spineAngle": build_spine_angle_finding(
+            measurements[
+                "spineAngleChangeDegrees"
+            ]
+        ),
+        "headMovement": build_movement_finding(
+            value=measurements[
+                "headMovementFromAddress"
+            ]["distanceNormalized"],
+            stable_maximum=0.08,
+            moderate_maximum=0.14,
+            body_part_name="Head",
+        ),
+        "shoulderMovement": build_movement_finding(
+            value=measurements[
+                "shoulderMovementFromAddress"
+            ]["distanceNormalized"],
+            stable_maximum=0.12,
+            moderate_maximum=0.20,
+            body_part_name="Shoulder-center",
+        ),
+        "hipMovement": build_movement_finding(
+            value=measurements[
+                "hipMovementFromAddress"
+            ]["distanceNormalized"],
+            stable_maximum=0.10,
+            moderate_maximum=0.18,
+            body_part_name="Hip-center",
+        ),
+        "leadArm": build_lead_arm_finding(
+            measurements[
+                "leadArmAngleAtImpactDegrees"
+            ]
+        ),
+        "trailArm": build_trail_arm_finding(
+            measurements[
+                "trailArmAngleAtImpactDegrees"
+            ]
+        ),
+    }
+
+    issue_statuses = {
+        "excessive_loss",
+        "excessive_gain",
+        "excessive",
+        "collapsed",
+        "excessively_bent",
+        "overextended",
+    }
+
+    issue_names = [
+        finding_name
+        for finding_name, finding in findings.items()
+        if finding["status"] in issue_statuses
+    ]
+
+    unavailable_count = sum(
+        finding["status"] == "not_available"
+        for finding in findings.values()
+    )
+
+    if issue_names:
+        classification = "needs_attention"
+        feedback_status = "outside_target"
+        primary_issue = issue_names[0]
+        feedback_message = findings[
+            primary_issue
+        ]["message"]
+    elif unavailable_count > 0:
+        classification = "incomplete"
+        feedback_status = "insufficient_data"
+        primary_issue = None
+        feedback_message = (
+            "Some impact-position measurements were unavailable. "
+            "Review the impact reference before relying on this "
+            "classification."
+        )
+    else:
+        classification = "neutral"
+        feedback_status = "within_target"
+        primary_issue = None
+        feedback_message = (
+            "Your measured impact position is within the current "
+            "prototype target ranges."
+        )
+
     return {
         "referenceFrames": {
             "start": build_reference_metadata(
@@ -363,15 +655,18 @@ def build_impact_position_metrics(
             "total": total_measurement_count,
             "ratio": round_value(completeness),
         },
+        "findings": findings,
+        "classification": classification,
+        "issueCount": len(issue_names),
+        "primaryIssue": primary_issue,
         "confidence": round_value(confidence),
-        "classification": "unclassified",
         "feedback": {
-            "status": "not_available",
-            "message": None,
+            "status": feedback_status,
+            "message": feedback_message,
             "basis": (
-                "This milestone extracts impact-position "
-                "measurements only. Coaching classification "
-                "has not yet been implemented."
+                "Prototype heuristic ranges used to organize "
+                "2D impact-position observations. These ranges "
+                "are not universal golf instruction standards."
             ),
         },
     }
