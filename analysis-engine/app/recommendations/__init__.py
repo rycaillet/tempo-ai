@@ -4,6 +4,11 @@ from app.recommendations.catalog import (
     get_recommendation_template,
     validate_recommendation_catalog,
 )
+from app.recommendations.engine import (
+    build_recommendation,
+    build_swing_recommendations,
+    normalize_warnings,
+)
 from app.recommendations.models import (
     PrimaryFocus,
     Recommendation,
@@ -16,6 +21,9 @@ __all__ = [
     "Recommendation",
     "RecommendationTemplate",
     "SwingRecommendations",
+    "build_recommendation",
+    "build_swing_recommendations",
     "get_recommendation_template",
+    "normalize_warnings",
     "validate_recommendation_catalog",
 ]
