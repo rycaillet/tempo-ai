@@ -61,6 +61,23 @@ class SwingAnalysisReportTests(unittest.TestCase):
                     "status": "ready",
                 },
             },
+            findings={
+                "status": "ready",
+                "overallFinding": "Strong measured swing.",
+                "strengths": [
+                    {
+                        "metricKey": "tempo",
+                        "displayName": "Tempo",
+                        "score": 92.0,
+                        "reason": (
+                            "Tempo was one of the highest-scoring "
+                            "available metrics."
+                        ),
+                    },
+                ],
+                "improvementPriorities": [],
+                "warnings": [],
+            },
             summary={
                 "referenceFrameCount": 6,
                 "handednessAssumption": "right",
@@ -88,6 +105,7 @@ class SwingAnalysisReportTests(unittest.TestCase):
                 "referenceGeometry",
                 "metrics",
                 "scoring",
+                "findings",
                 "summary",
             ),
         )
@@ -131,6 +149,18 @@ class SwingAnalysisReportTests(unittest.TestCase):
             92.0,
         )
         self.assertEqual(
+            result["findings"]["status"],
+            "ready",
+        )
+        self.assertEqual(
+            result["findings"]["overallFinding"],
+            "Strong measured swing.",
+        )
+        self.assertEqual(
+            result["findings"]["strengths"][0]["metricKey"],
+            "tempo",
+        )
+        self.assertEqual(
             result["summary"]["referenceFrameCount"],
             6,
         )
@@ -151,6 +181,7 @@ class SwingAnalysisReportTests(unittest.TestCase):
             "referenceGeometry",
             "metrics",
             "scoring",
+            "findings",
             "summary",
         )
 
@@ -178,6 +209,7 @@ class SwingAnalysisReportTests(unittest.TestCase):
                 reference_geometry={},
                 metrics=invalid_metrics,
                 scoring={},
+                findings={},
                 summary={},
             )
 

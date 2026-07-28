@@ -67,5 +67,8 @@ def build_swing_analysis_report(
         metrics=require_analysis_section("metrics", metrics),
         scoring=require_analysis_section("scoring", scoring),
         summary=require_analysis_section("summary", summary),
-        findings=require_analysis_section("findings",findings),
+        findings=require_analysis_section(
+            "findings",
+            findings,
+        ),
     )
