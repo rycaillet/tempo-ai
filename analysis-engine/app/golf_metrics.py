@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 from typing import Any, Literal
 
+from app.analysis import build_swing_analysis_report
 from app.metrics.early_extension import (
     build_early_extension_metrics,
 )
@@ -1865,9 +1866,9 @@ def analyze_golf_metrics(
         metric_results=registered_metrics,
     )
 
-    result = {
-        "sourceVideo": geometry_data.get("sourceVideo"),
-        "inputs": {
+    report = build_swing_analysis_report(
+        source_video=geometry_data.get("sourceVideo"),
+        inputs={
             "geometryAnalysisPath": str(
                 geometry_path.resolve()
             ),
@@ -1875,7 +1876,7 @@ def analyze_golf_metrics(
                 refined_phases_path.resolve()
             ),
         },
-        "coordinateSystem": {
+        coordinate_system={
             "space": (
                 "normalized-landmarks-and-rotated-video-pixels"
             ),
@@ -1885,7 +1886,7 @@ def analyze_golf_metrics(
             "positiveYDirection": "image-down",
             "angleUnits": "degrees",
         },
-        "assumptions": {
+        assumptions={
             "handedness": handedness,
             "phaseReferences": (
                 "Reference frames come from the golf-specific "
@@ -1914,7 +1915,7 @@ def analyze_golf_metrics(
                 "instruction standards."
             ),
         },
-        "phaseFrames": {
+        phase_frames={
             reference_name: {
                 "frameIndex": reference["frameIndex"],
                 "timestampSeconds": reference[
@@ -1924,11 +1925,11 @@ def analyze_golf_metrics(
             }
             for reference_name, reference in references.items()
         },
-        "referenceGeometry": {
+        reference_geometry={
             reference_name: reference["geometry"]
             for reference_name, reference in references.items()
         },
-        "metrics": {
+        metrics={
             "phaseValidation": phase_validation,
             "feedbackEligibility": feedback_eligibility,
             **registered_metrics,
@@ -1942,15 +1943,13 @@ def analyze_golf_metrics(
                 handedness,
             ),
         },
-        "scoring": scoring,
-        "summary": {
+        scoring=scoring,
+        summary={
             "referenceFrameCount": len(references),
             "availableReferenceMeasurements": (
                 available_measurements
             ),
-            "totalReferenceMeasurements": (
-                total_measurements
-            ),
+            "totalReferenceMeasurements": total_measurements,
             "referenceMeasurementCompleteness": (
                 round_value(
                     available_measurements
@@ -1981,7 +1980,9 @@ def analyze_golf_metrics(
                 metric_results=registered_metrics,
             ),
         },
-    }
+    )
+
+    result = report.to_dict()
 
     resolved_output_path = (
         output_path
