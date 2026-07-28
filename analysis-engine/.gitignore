@@ -6,3 +6,8 @@ __pycache__/
 # Generated analysis files
 output/*.json
 output/*.csv
+
+# Local environment variables
+.env
+.env.*
+!.env.example
