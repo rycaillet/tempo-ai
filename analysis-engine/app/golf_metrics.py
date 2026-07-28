@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from app.analysis import build_swing_analysis_report
 from app.findings import build_swing_findings
+from app.recommendations import build_swing_recommendations
 from app.metrics.early_extension import (
     build_early_extension_metrics,
 )
@@ -1877,6 +1878,12 @@ def analyze_golf_metrics(
         },
     )
 
+    findings_data = findings.to_dict()
+
+    recommendations = build_swing_recommendations(
+        findings=findings_data,
+    ).to_dict()
+
     report = build_swing_analysis_report(
         source_video=geometry_data.get("sourceVideo"),
         inputs={
@@ -1956,6 +1963,7 @@ def analyze_golf_metrics(
         },
         scoring=scoring,
         findings=findings.to_dict(),
+        recommendations=recommendations,
         summary={
             "referenceFrameCount": len(references),
             "availableReferenceMeasurements": (

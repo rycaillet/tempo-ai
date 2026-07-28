@@ -17,7 +17,7 @@ def require_analysis_section(
 
     if not isinstance(section, Mapping):
         raise TypeError(
-            f"Analysis report section must be a mapping: "
+            "Analysis report section must be a mapping: "
             f"{section_name}"
         )
 
@@ -35,6 +35,7 @@ def build_swing_analysis_report(
     metrics: Mapping[str, Any],
     scoring: Mapping[str, Any],
     findings: Mapping[str, Any],
+    recommendations: Mapping[str, Any],
     summary: Mapping[str, Any],
 ) -> SwingAnalysisReport:
     """
@@ -66,9 +67,13 @@ def build_swing_analysis_report(
         ),
         metrics=require_analysis_section("metrics", metrics),
         scoring=require_analysis_section("scoring", scoring),
-        summary=require_analysis_section("summary", summary),
         findings=require_analysis_section(
             "findings",
             findings,
         ),
+        recommendations=require_analysis_section(
+            "recommendations",
+            recommendations,
+        ),
+        summary=require_analysis_section("summary", summary),
     )

@@ -14,8 +14,7 @@ class SwingAnalysisReport:
     pipeline.
 
     The report acts as the stable aggregate passed to future systems
-    such as insights, coaching, comparison, persistence, and API
-    serialization.
+    such as coaching, comparison, persistence, and API serialization.
     """
 
     source_video: Any
@@ -27,11 +26,12 @@ class SwingAnalysisReport:
     metrics: AnalysisSection
     scoring: AnalysisSection
     findings: AnalysisSection
+    recommendations: AnalysisSection
     summary: AnalysisSection
 
     def to_dict(self) -> dict[str, Any]:
         """
-        Serialize the report using the existing public JSON structure.
+        Serialize the report using the public JSON structure.
 
         Top-level sections are copied so callers cannot add or remove
         report fields by mutating the dictionaries returned here.
@@ -47,5 +47,6 @@ class SwingAnalysisReport:
             "metrics": dict(self.metrics),
             "scoring": dict(self.scoring),
             "findings": dict(self.findings),
+            "recommendations": dict(self.recommendations),
             "summary": dict(self.summary),
         }

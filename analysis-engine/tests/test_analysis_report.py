@@ -78,6 +78,37 @@ class SwingAnalysisReportTests(unittest.TestCase):
                 "improvementPriorities": [],
                 "warnings": [],
             },
+            recommendations={
+                "status": "ready",
+                "primaryFocus": {
+                    "metricKey": "rotation",
+                    "displayName": "Rotation",
+                    "severity": "high",
+                },
+                "recommendations": [
+                    {
+                        "metricKey": "rotation",
+                        "displayName": "Rotation",
+                        "severity": "high",
+                        "priority": 1,
+                        "title": "Improve rotational sequencing",
+                        "summary": (
+                            "Coordinate the shoulder and hip turn."
+                        ),
+                        "focus": (
+                            "Body turn and rotational sequence"
+                        ),
+                        "rationale": (
+                            "Coordinated rotation supports balance."
+                        ),
+                        "practiceCues": [
+                            "Create a comfortable shoulder turn.",
+                        ],
+                        "caution": None,
+                    },
+                ],
+                "warnings": [],
+            },
             summary={
                 "referenceFrameCount": 6,
                 "handednessAssumption": "right",
@@ -106,6 +137,7 @@ class SwingAnalysisReportTests(unittest.TestCase):
                 "metrics",
                 "scoring",
                 "findings",
+                "recommendations",
                 "summary",
             ),
         )
@@ -161,6 +193,22 @@ class SwingAnalysisReportTests(unittest.TestCase):
             "tempo",
         )
         self.assertEqual(
+            result["recommendations"]["status"],
+            "ready",
+        )
+        self.assertEqual(
+            result["recommendations"]["primaryFocus"][
+                "metricKey"
+            ],
+            "rotation",
+        )
+        self.assertEqual(
+            result["recommendations"]["recommendations"][0][
+                "priority"
+            ],
+            1,
+        )
+        self.assertEqual(
             result["summary"]["referenceFrameCount"],
             6,
         )
@@ -182,6 +230,7 @@ class SwingAnalysisReportTests(unittest.TestCase):
             "metrics",
             "scoring",
             "findings",
+            "recommendations",
             "summary",
         )
 
@@ -210,6 +259,7 @@ class SwingAnalysisReportTests(unittest.TestCase):
                 metrics=invalid_metrics,
                 scoring={},
                 findings={},
+                recommendations={},
                 summary={},
             )
 
