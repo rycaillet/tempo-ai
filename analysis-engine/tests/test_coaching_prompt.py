@@ -174,6 +174,125 @@ class CoachingPromptTests(unittest.TestCase):
             prompt.user_message,
         )
 
+    def test_prompt_includes_ordered_coaching_instructions(
+        self,
+    ) -> None:
+        prompt = build_coaching_prompt(
+            self.build_context()
+        )
+
+        user_payload = json.loads(
+            prompt.user_message
+        )
+        instructions = user_payload[
+            "instructions"
+        ]
+
+        self.assertEqual(
+            len(instructions),
+            7,
+        )
+        self.assertIn(
+            "first coaching priority",
+            instructions[0],
+        )
+        self.assertIn(
+            "one clear coaching theme",
+            instructions[1],
+        )
+        self.assertIn(
+            "practice cues",
+            instructions[3],
+        )
+        self.assertIn(
+            "sourceMetricKeys",
+            instructions[5],
+        )
+        self.assertIn(
+            "required JSON object",
+            instructions[6],
+        )
+
+    def test_system_message_protects_primary_priority(
+        self,
+    ) -> None:
+        prompt = build_coaching_prompt(
+            self.build_context()
+        )
+
+        self.assertIn(
+            "Make the primary priority the clear center",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Do not replace it with a secondary priority",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Do not overwhelm the golfer with unrelated changes",
+            prompt.system_message,
+        )
+
+    def test_system_message_blocks_unsupported_coaching(
+        self,
+    ) -> None:
+        prompt = build_coaching_prompt(
+            self.build_context()
+        )
+
+        self.assertIn(
+            "Do not claim to know why a measured result occurred",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Do not introduce a drill unless it is supported",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Do not invent measurements",
+            prompt.system_message,
+        )
+
+    def test_system_message_requires_grounded_action_steps(
+        self,
+    ) -> None:
+        prompt = build_coaching_prompt(
+            self.build_context()
+        )
+
+        self.assertIn(
+            "Base the steps on supplied practice cues",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "something the golfer can rehearse",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Do not promise that an action will fix",
+            prompt.system_message,
+        )
+
+    def test_system_message_requires_json_only_output(
+        self,
+    ) -> None:
+        prompt = build_coaching_prompt(
+            self.build_context()
+        )
+
+        self.assertIn(
+            "Return exactly one JSON object",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Do not include Markdown",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "text outside the JSON object",
+            prompt.system_message,
+        )
+
     def test_rejects_invalid_context(
         self,
     ) -> None:

@@ -12,6 +12,7 @@ from app.coaching import (
     CoachingProviderError,
     OpenAICoachingProvider,
     build_coaching_response_schema,
+    PROMPT_VERSION,
 )
 
 
@@ -237,7 +238,7 @@ class OpenAICoachingProviderTests(
             request["instructions"],
         )
         self.assertIn(
-            "tempo-coach-v1",
+            PROMPT_VERSION,
             request["input"],
         )
 

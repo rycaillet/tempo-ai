@@ -209,6 +209,73 @@ class CoachingResponseValidationTests(
                 context=self.build_context(),
             )
 
+    def test_rejects_duplicate_action_steps(
+        self,
+    ) -> None:
+        payload = self.build_payload()
+        payload["actionSteps"] = [
+            "Balance over the middle of the feet.",
+            "balance over the middle of the feet.",
+        ]
+
+        with self.assertRaises(
+            CoachingResponseValidationError
+        ):
+            validate_coaching_response_payload(
+                payload=payload,
+                context=self.build_context(),
+            )
+
+    def test_rejects_vague_action_steps(
+        self,
+    ) -> None:
+        payload = self.build_payload()
+        payload["actionSteps"] = [
+            "Practice.",
+        ]
+
+        with self.assertRaises(
+            CoachingResponseValidationError
+        ):
+            validate_coaching_response_payload(
+                payload=payload,
+                context=self.build_context(),
+            )
+
+    def test_rejects_repeated_coaching_sections(
+        self,
+    ) -> None:
+        payload = self.build_payload()
+        repeated_text = "Improve your address posture."
+
+        payload["headline"] = repeated_text
+        payload["overview"] = repeated_text
+        payload["primaryFocus"] = repeated_text
+
+        with self.assertRaises(
+            CoachingResponseValidationError
+        ):
+            validate_coaching_response_payload(
+                payload=payload,
+                context=self.build_context(),
+            )
+
+    def test_rejects_primary_focus_without_priority_language(
+        self,
+    ) -> None:
+        payload = self.build_payload()
+        payload["primaryFocus"] = (
+            "Focus only on creating a smoother tempo."
+        )
+
+        with self.assertRaises(
+            CoachingResponseValidationError
+        ):
+            validate_coaching_response_payload(
+                payload=payload,
+                context=self.build_context(),
+            )
+
     def test_rejects_missing_required_text(
         self,
     ) -> None:
