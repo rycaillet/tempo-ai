@@ -209,6 +209,9 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
 
             summary = result["summary"]
             metrics = result["metrics"]
+            scoring = result["scoring"]
+            findings_report = result["findings"]
+            recommendations = result["recommendations"]
             validation = metrics["phaseValidation"]
             eligibility = metrics[
                 "feedbackEligibility"
@@ -1003,6 +1006,86 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                 "weightShift",
                 metrics,
             )
+            self.assertIsInstance(scoring, dict)
+            self.assertIsInstance(findings_report, dict)
+            self.assertIsInstance(recommendations, dict)
+
+            self.assertEqual(
+                scoring["interpretation"]["status"],
+                findings_report["status"],
+            )
+
+            self.assertEqual(
+                findings_report["status"],
+                recommendations["status"],
+            )
+
+            improvement_priorities = findings_report[
+                "improvementPriorities"
+            ]
+            generated_recommendations = recommendations[
+                "recommendations"
+            ]
+
+            self.assertEqual(
+                len(generated_recommendations),
+                len(improvement_priorities),
+            )
+
+            expected_metric_keys = [
+                priority["metricKey"]
+                for priority in improvement_priorities
+            ]
+
+            recommendation_metric_keys = [
+                recommendation["metricKey"]
+                for recommendation in generated_recommendations
+            ]
+
+            self.assertEqual(
+                recommendation_metric_keys,
+                expected_metric_keys,
+            )
+
+            expected_priorities = list(
+                range(
+                    1,
+                    len(generated_recommendations) + 1,
+                )
+            )
+
+            actual_priorities = [
+                recommendation["priority"]
+                for recommendation in generated_recommendations
+            ]
+
+            self.assertEqual(
+                actual_priorities,
+                expected_priorities,
+            )
+
+            if improvement_priorities:
+                primary_focus = recommendations[
+                    "primaryFocus"
+                ]
+
+                self.assertIsNotNone(primary_focus)
+                self.assertEqual(
+                    primary_focus["metricKey"],
+                    improvement_priorities[0]["metricKey"],
+                )
+                self.assertEqual(
+                    primary_focus["displayName"],
+                    improvement_priorities[0]["displayName"],
+                )
+                self.assertEqual(
+                    primary_focus["severity"],
+                    improvement_priorities[0]["severity"],
+                )
+            else:
+                self.assertIsNone(
+                    recommendations["primaryFocus"]
+                )
 
             self.assertEqual(
                 command_result["summary"],
