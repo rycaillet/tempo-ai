@@ -8,6 +8,10 @@ from app.coaching.models import (
     CoachResponse,
     CoachStrength,
 )
+from app.coaching.openai_provider import (
+    OpenAICoachingProvider,
+    build_coaching_response_schema,
+)
 from app.coaching.prompt import (
     PROMPT_VERSION,
     CoachingPrompt,
@@ -38,8 +42,10 @@ __all__ = [
     "CoachingProviderError",
     "CoachingResponseValidationError",
     "MockCoachingProvider",
+    "OpenAICoachingProvider",
     "build_coach_context",
     "build_coaching_prompt",
+    "build_coaching_response_schema",
     "generate_coaching_response",
     "validate_coaching_response_payload",
 ]
