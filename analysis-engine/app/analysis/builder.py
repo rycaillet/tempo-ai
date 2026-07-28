@@ -34,6 +34,7 @@ def build_swing_analysis_report(
     reference_geometry: Mapping[str, Any],
     metrics: Mapping[str, Any],
     scoring: Mapping[str, Any],
+    findings: Mapping[str, Any],
     summary: Mapping[str, Any],
 ) -> SwingAnalysisReport:
     """
@@ -66,4 +67,5 @@ def build_swing_analysis_report(
         metrics=require_analysis_section("metrics", metrics),
         scoring=require_analysis_section("scoring", scoring),
         summary=require_analysis_section("summary", summary),
+        findings=require_analysis_section("findings",findings),
     )

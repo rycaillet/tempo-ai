@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.analysis import build_swing_analysis_report
+from app.findings import build_swing_findings
 from app.metrics.early_extension import (
     build_early_extension_metrics,
 )
@@ -1866,6 +1867,16 @@ def analyze_golf_metrics(
         metric_results=registered_metrics,
     )
 
+    findings = build_swing_findings(
+        scoring=scoring,
+        metric_display_names={
+            registration.definition.key: (
+                registration.definition.display_name
+            )
+            for registration in METRIC_REGISTRY
+        },
+    )
+
     report = build_swing_analysis_report(
         source_video=geometry_data.get("sourceVideo"),
         inputs={
@@ -1944,6 +1955,7 @@ def analyze_golf_metrics(
             ),
         },
         scoring=scoring,
+        findings=findings.to_dict(),
         summary={
             "referenceFrameCount": len(references),
             "availableReferenceMeasurements": (

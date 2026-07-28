@@ -26,6 +26,7 @@ class SwingAnalysisReport:
     reference_geometry: AnalysisSection
     metrics: AnalysisSection
     scoring: AnalysisSection
+    findings: AnalysisSection
     summary: AnalysisSection
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,5 +46,6 @@ class SwingAnalysisReport:
             "referenceGeometry": dict(self.reference_geometry),
             "metrics": dict(self.metrics),
             "scoring": dict(self.scoring),
+            "findings": dict(self.findings),
             "summary": dict(self.summary),
         }
