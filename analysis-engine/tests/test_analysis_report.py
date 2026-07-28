@@ -7,6 +7,7 @@ from app.analysis import (
     SwingAnalysisReport,
     build_swing_analysis_report,
 )
+from app.coaching import CoachResponse
 
 
 class SwingAnalysisReportTests(unittest.TestCase):
@@ -239,6 +240,79 @@ class SwingAnalysisReportTests(unittest.TestCase):
                 first_result[section_key],
                 second_result[section_key],
             )
+
+    def test_report_does_not_include_coaching_by_default(
+        self,
+    ) -> None:
+        report = self.build_report()
+
+        result = report.to_dict()
+
+        self.assertNotIn("coaching", result)
+        self.assertIsNone(report.coaching)
+
+    def test_report_serializes_attached_coaching(
+        self,
+    ) -> None:
+        coaching = CoachResponse(
+            status="ready",
+            headline="Build a more balanced turn",
+            overview=(
+                "Your measured swing is solid, with rotation "
+                "as the clearest improvement opportunity."
+            ),
+            primary_focus="Improve rotational sequencing.",
+            action_steps=(
+                "Make slow rehearsal swings.",
+                "Keep the turn balanced.",
+            ),
+            encouragement=(
+                "Your overall motion provides a strong base."
+            ),
+            disclaimer=(
+                "Coaching is based on measured video analysis."
+            ),
+            warnings=(),
+        )
+
+        report = build_swing_analysis_report(
+            source_video="swing.mp4",
+            inputs={},
+            coordinate_system={},
+            assumptions={},
+            phase_frames={},
+            reference_geometry={},
+            metrics={},
+            scoring={},
+            findings={},
+            recommendations={},
+            summary={},
+            coaching=coaching,
+        )
+
+        result = report.to_dict()
+
+        self.assertIs(report.coaching, coaching)
+        self.assertIn("coaching", result)
+        self.assertEqual(
+            result["coaching"]["status"],
+            "ready",
+        )
+        self.assertEqual(
+            result["coaching"]["headline"],
+            "Build a more balanced turn",
+        )
+        self.assertEqual(
+            result["coaching"]["primaryFocus"],
+            "Improve rotational sequencing.",
+        )
+        self.assertEqual(
+            result["coaching"]["actionSteps"],
+            [
+                "Make slow rehearsal swings.",
+                "Keep the turn balanced.",
+            ],
+        )
 
     def test_builder_rejects_invalid_required_section(
         self,

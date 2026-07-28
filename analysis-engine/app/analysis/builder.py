@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from app.analysis.report import SwingAnalysisReport
+from app.coaching.models import CoachResponse
 
 
 def require_analysis_section(
@@ -37,13 +38,15 @@ def build_swing_analysis_report(
     findings: Mapping[str, Any],
     recommendations: Mapping[str, Any],
     summary: Mapping[str, Any],
+    coaching: CoachResponse | None = None,
 ) -> SwingAnalysisReport:
     """
     Build the complete domain report for one analyzed golf swing.
 
-    This builder intentionally does not calculate metrics or alter
-    analysis values. It establishes the stable boundary between the
-    deterministic pipeline and downstream consumers.
+    This builder intentionally does not calculate metrics, generate
+    coaching, or alter analysis values. It establishes the stable
+    boundary between the deterministic pipeline and downstream
+    consumers.
     """
 
     return SwingAnalysisReport(
@@ -76,4 +79,5 @@ def build_swing_analysis_report(
             recommendations,
         ),
         summary=require_analysis_section("summary", summary),
+        coaching=coaching,
     )

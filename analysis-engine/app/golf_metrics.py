@@ -3,10 +3,17 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
 
 from app.analysis import build_swing_analysis_report
+from app.coaching import (
+    CoachingProvider,
+    build_coach_context,
+    build_configured_coaching_provider,
+    generate_coaching_response,
+)
 from app.findings import build_swing_findings
 from app.recommendations import build_swing_recommendations
 from app.metrics.early_extension import (
@@ -1740,6 +1747,7 @@ def analyze_golf_metrics(
     refined_phases_path: Path,
     output_path: Path | None = None,
     handedness: Handedness = "right",
+    coaching_provider: CoachingProvider | None = None,
 ) -> dict[str, Any]:
     geometry_data = load_json(geometry_path)
     refined_phases_data = load_json(refined_phases_path)
@@ -2002,6 +2010,28 @@ def analyze_golf_metrics(
         },
     )
 
+    deterministic_result = report.to_dict()
+
+    coach_context = build_coach_context(
+        deterministic_result
+    )
+
+    provider = (
+        coaching_provider
+        if coaching_provider is not None
+        else build_configured_coaching_provider()
+    )
+
+    coaching_response = generate_coaching_response(
+        context=coach_context,
+        provider=provider,
+    )
+
+    report = replace(
+        report,
+        coaching=coaching_response,
+    )
+
     result = report.to_dict()
 
     resolved_output_path = (
@@ -2017,6 +2047,7 @@ def analyze_golf_metrics(
         "summary": result["summary"],
         "scoring": result["scoring"],
         "phaseFrames": result["phaseFrames"],
+        "coaching": result["coaching"],
         "golfMetricsPath": str(
             resolved_output_path.resolve()
         ),

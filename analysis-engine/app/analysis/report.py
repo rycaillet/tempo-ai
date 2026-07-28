@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from app.coaching.models import CoachResponse
+
 
 AnalysisSection = Mapping[str, Any]
 
@@ -11,10 +13,11 @@ AnalysisSection = Mapping[str, Any]
 class SwingAnalysisReport:
     """
     Complete deterministic output produced by the golf analysis
-    pipeline.
+    pipeline, optionally enriched with validated coaching output.
 
-    The report acts as the stable aggregate passed to future systems
-    such as coaching, comparison, persistence, and API serialization.
+    The deterministic analysis sections remain the source of truth.
+    Coaching is generated afterward and attached as a downstream
+    result.
     """
 
     source_video: Any
@@ -28,16 +31,21 @@ class SwingAnalysisReport:
     findings: AnalysisSection
     recommendations: AnalysisSection
     summary: AnalysisSection
+    coaching: CoachResponse | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """
         Serialize the report using the public JSON structure.
 
-        Top-level sections are copied so callers cannot add or remove
-        report fields by mutating the dictionaries returned here.
+        Top-level analysis sections are copied so callers cannot add
+        or remove report fields by mutating the returned dictionaries.
+
+        The coaching section is included only when validated coaching
+        output has been attached. Deterministic-only reports therefore
+        preserve their existing public structure.
         """
 
-        return {
+        result = {
             "sourceVideo": self.source_video,
             "inputs": dict(self.inputs),
             "coordinateSystem": dict(self.coordinate_system),
@@ -50,3 +58,8 @@ class SwingAnalysisReport:
             "recommendations": dict(self.recommendations),
             "summary": dict(self.summary),
         }
+
+        if self.coaching is not None:
+            result["coaching"] = self.coaching.to_dict()
+
+        return result
