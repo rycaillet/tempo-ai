@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
+from app.club_detector import (
+    analyze_club_detection,
+)
 from app.geometry import (
     analyze_geometry,
     create_geometry_output_path,
@@ -146,6 +149,52 @@ def run_analysis_pipeline(
         refined_phases,
     )
 
+    club_detection_result = (
+        analyze_club_detection(
+            video_path=resolved_video_path,
+            pose_timeline_path=(
+                pose_timeline_path
+            ),
+            refined_phases_path=(
+                refined_phases_path
+            ),
+        )
+    )
+
+    club_detection_path_value = (
+        club_detection_result.get(
+            "clubDetectionPath"
+        )
+    )
+
+    if not isinstance(
+        club_detection_path_value,
+        str,
+    ):
+        raise RuntimeError(
+            "Club detection did not return "
+            "an artifact output path."
+        )
+
+    club_detection_path = Path(
+        club_detection_path_value
+    ).resolve()
+
+    club_detection_payload = (
+        club_detection_result.get(
+            "clubDetection"
+        )
+    )
+
+    if not isinstance(
+        club_detection_payload,
+        dict,
+    ):
+        raise RuntimeError(
+            "Club detection did not return "
+            "a result payload."
+        )
+
     metrics_result = analyze_golf_metrics(
         geometry_path=geometry_analysis_path,
         refined_phases_path=refined_phases_path,
@@ -193,6 +242,9 @@ def run_analysis_pipeline(
             "refinedPhasesPath": str(
                 refined_phases_path
             ),
+            "clubDetectionPath": str(
+                club_detection_path
+            ),
             "golfMetricsPath": str(
                 golf_metrics_path
             ),
@@ -213,6 +265,11 @@ def run_analysis_pipeline(
             "refinedPhases": refined_phases[
                 "summary"
             ],
+            "clubDetection": (
+                club_detection_payload[
+                    "summary"
+                ]
+            ),
         },
         "report": final_report,
     }
