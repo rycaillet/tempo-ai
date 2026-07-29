@@ -42,11 +42,11 @@ export type PracticePlanItem = {
 export type AnalysisSummary = {
   id: string;
   title: string;
-  club: string;
-  cameraAngle: string;
+  club: string | null;
+  cameraAngle: string | null;
   date: string;
   overallScore: number;
-  change: string;
+  change: string | null;
   summary: string;
   strength: string;
 };

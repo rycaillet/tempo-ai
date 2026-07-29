@@ -617,6 +617,9 @@ export function mapBackendAnalysis(
       title: createAnalysisTitle(
         record.originalFilename,
       ),
+      club: null,
+      cameraAngle: null,
+      change: null,
       date: formatAnalysisDate(
         record.createdAt,
       ),

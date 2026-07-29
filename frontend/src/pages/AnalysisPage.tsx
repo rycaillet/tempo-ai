@@ -38,25 +38,26 @@ const severityVariant = {
   Low: "neutral",
 } as const;
 
-const phaseProgress = {
-  address: 0,
-  takeaway: 0.18,
-  top: 0.38,
-  downswing: 0.58,
-  impact: 0.72,
-  finish: 0.92,
-} as const;
-
 function getPhaseTime(
-  phaseId: string,
+  phase: SwingPhase,
   duration: number,
 ) {
-  const progress =
-    phaseProgress[
-      phaseId as keyof typeof phaseProgress
-    ] ?? 0;
+  const parsedTimestamp = Number.parseFloat(
+    phase.timestamp.replace("s", ""),
+  );
 
-  return duration * progress;
+  if (
+    Number.isFinite(parsedTimestamp) &&
+    parsedTimestamp >= 0
+  ) {
+    if (duration > 0) {
+      return Math.min(parsedTimestamp, duration);
+    }
+
+    return parsedTimestamp;
+  }
+
+  return 0;
 }
 
 function formatPlaybackTime(seconds: number) {
@@ -72,14 +73,14 @@ function findCurrentPhase(
   currentTime: number,
   duration: number,
 ) {
-  if (duration <= 0) {
-    return phases[0];
+  if (phases.length === 0) {
+    return undefined;
   }
 
   return phases.reduce<SwingPhase>(
     (currentPhase, phase) => {
       const phaseTime = getPhaseTime(
-        phase.id,
+        phase,
         duration,
       );
 
@@ -148,7 +149,7 @@ function AnalysisPage() {
     ) ?? swingPhases[0];
 
   const selectedFinding =
-    selectedPhase.coaching.findingId
+    selectedPhase?.coaching.findingId
       ? swingFindings.find(
           (finding) =>
             finding.id ===
@@ -168,7 +169,7 @@ function AnalysisPage() {
     }
 
     const phaseTime = getPhaseTime(
-      phase.id,
+      phase,
       videoDuration,
     );
 
@@ -209,7 +210,10 @@ function AnalysisPage() {
     );
 
     setCurrentTime(nextTime);
-    setSelectedPhaseId(currentPhase.id);
+
+    if (currentPhase) {
+      setSelectedPhaseId(currentPhase.id);
+    }
   }
 
   function handleLoadedMetadata() {
@@ -247,11 +251,15 @@ function AnalysisPage() {
               </h1>
 
               <div className="mt-5 flex flex-wrap gap-x-6 gap-y-3 text-sm text-copy-muted">
-                <span>{analysisSummary.club}</span>
+                {analysisSummary.club && (
+                  <span>{analysisSummary.club}</span>
+                )}
 
-                <span>
-                  {analysisSummary.cameraAngle}
-                </span>
+                {analysisSummary.cameraAngle && (
+                  <span>
+                    {analysisSummary.cameraAngle}
+                  </span>
+                )}
 
                 <span className="inline-flex items-center gap-2">
                   <CalendarDays size={15} />
@@ -289,7 +297,7 @@ function AnalysisPage() {
               <div className="flex flex-col gap-4 border-b border-white/10 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-display text-xl font-semibold text-white">
-                    Down-the-line video
+                    Analyzed swing video
                   </p>
 
                   <p className="mt-1 text-sm text-copy-subtle">
@@ -384,9 +392,9 @@ function AnalysisPage() {
 
               <div className="border-t border-white/10 px-5 py-5">
                 <p className="mb-4 text-xs leading-5 text-copy-subtle">
-                  Phase markers are estimated
-                  from the video duration and are
-                  provided for navigation.
+                  Phase markers were detected by the
+                  TempoAI analysis engine and can be
+                  used to navigate the swing.
                 </p>
 
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -395,18 +403,15 @@ function AnalysisPage() {
                       phase.id ===
                       selectedPhase.id;
 
-                    const phaseTime =
-                      videoDuration > 0
-                        ? getPhaseTime(
-                            phase.id,
-                            videoDuration,
-                          )
-                        : 0;
+                    const phaseTime = getPhaseTime(
+                      phase,
+                      videoDuration,
+                    );
 
                     return (
                       <button
                         key={phase.id}
-                        aria-label={`Jump to estimated ${phase.label} phase`}
+                        aria-label={`Jump to detected ${phase.label} phase`}
                         aria-pressed={isSelected}
                         className={[
                           "group rounded-2xl border px-3 py-3 text-center transition",
@@ -472,7 +477,8 @@ function AnalysisPage() {
                     analysisSummary.overallScore
                   }
                   subtitle={
-                    analysisSummary.change
+                    analysisSummary.change ??
+                    "Production engine result"
                   }
                 />
               </Panel>
@@ -539,8 +545,7 @@ function AnalysisPage() {
                     </p>
 
                     <h2 className="mt-3 font-display text-3xl font-semibold tracking-[-0.04em] text-white">
-                      A stronger, more
-                      controlled swing.
+                      Your swing analysis
                     </h2>
 
                     <p className="mt-5 leading-8 text-copy-muted">
@@ -555,13 +560,11 @@ function AnalysisPage() {
 
                       <div>
                         <p className="font-semibold text-white">
-                          Strongest improvement
+                          Strongest measured area
                         </p>
 
                         <p className="mt-1 text-sm leading-6 text-copy-muted">
-                          {
-                            analysisSummary.strength
-                          }
+                          {analysisSummary.strength}
                         </p>
                       </div>
                     </div>
@@ -613,9 +616,7 @@ function AnalysisPage() {
                             <div className="flex-1">
                               <div className="flex flex-wrap items-center gap-3">
                                 <h3 className="font-display text-2xl font-semibold text-white">
-                                  {
-                                    finding.title
-                                  }
+                                  {finding.title}
                                 </h3>
 
                                 <Badge
