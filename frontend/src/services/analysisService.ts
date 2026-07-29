@@ -1,5 +1,10 @@
 import { mapBackendAnalysis } from "../mappers/analysisMapper";
 import type { SwingAnalysis } from "../types/analysis";
+import type {
+  BackendAnalysisReport,
+  BackendPhaseFrames,
+  LegacyPhaseTimings,
+} from "../types/backendAnalysis";
 
 const apiBaseUrl =
   import.meta.env.VITE_API_URL ??
@@ -28,6 +33,11 @@ export type AnalysisRecord = {
   consistencyScore: number | null;
   primaryFinding: string | null;
   recommendation: string | null;
+  phaseTimings:
+    | BackendPhaseFrames
+    | LegacyPhaseTimings
+    | null;
+  analysisReport: BackendAnalysisReport | null;
   createdAt: string;
   updatedAt: string;
 };
