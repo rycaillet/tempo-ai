@@ -12,6 +12,12 @@ from app.pose_detector import (
     read_frame_at_index,
     rotate_frame,
 )
+from app.club_visualizer import (
+    create_club_visualization_directory,
+    create_club_visualization_path,
+    draw_club_detection_visualization,
+    save_club_detection_visualization,
+)
 
 
 LEFT_WRIST_INDEX = 15
@@ -66,6 +72,7 @@ class ClubFrameDetection(TypedDict):
     shaftLine: ShaftLine | None
     candidateCount: int
     failureReason: str | None
+    debugImagePath: str | None
 
 
 class ClubDetectionSummary(TypedDict):
@@ -76,11 +83,13 @@ class ClubDetectionSummary(TypedDict):
     detectionRate: float
     averageConfidence: float
     selectedRotation: str
+    visualizationCount: int
 
 
 class ClubDetectionResult(TypedDict):
     sourceVideo: str
     assumptions: dict[str, Any]
+    visualizationDirectory: str
     summary: ClubDetectionSummary
     frames: list[ClubFrameDetection]
 
@@ -629,6 +638,7 @@ def analyze_club_detection(
     pose_timeline_path: Path,
     refined_phases_path: Path,
     output_path: Path | None = None,
+    visualization_directory: Path | None = None,
 ) -> dict[str, Any]:
     resolved_video_path = (
         video_path.expanduser().resolve()
@@ -712,6 +722,25 @@ def analyze_club_detection(
         )
     )
 
+    resolved_visualization_directory = (
+        visualization_directory
+        if visualization_directory is not None
+        else create_club_visualization_directory(
+            refined_phases_path
+        )
+    )
+
+    resolved_visualization_directory = (
+        resolved_visualization_directory
+        .expanduser()
+        .resolve()
+    )
+
+    resolved_visualization_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     video = cv2.VideoCapture(
         str(resolved_video_path)
     )
@@ -773,6 +802,7 @@ def analyze_club_detection(
                             "contain the requested "
                             "reference frame."
                         ),
+                        "debugImagePath": None,
                     }
                 )
                 continue
@@ -809,6 +839,7 @@ def analyze_club_detection(
                             "landmarks were not "
                             "available."
                         ),
+                        "debugImagePath": None,
                     }
                 )
                 continue
@@ -837,6 +868,7 @@ def analyze_club_detection(
                             "The reference video "
                             "frame could not be read."
                         ),
+                        "debugImagePath": None,
                     }
                 )
                 continue
@@ -853,7 +885,42 @@ def analyze_club_detection(
                 )
             )
 
+            debug_image_path = (
+                create_club_visualization_path(
+                    resolved_visualization_directory,
+                    phase_name=phase_name,
+                    frame_index=frame_index,
+                )
+            )
+
             if not candidates:
+                failure_reason = (
+                    "No reliable shaft-line "
+                    "candidate was found near "
+                    "the detected hands."
+                )
+
+                visualization = (
+                    draw_club_detection_visualization(
+                        rotated_frame,
+                        phase_name=phase_name,
+                        frame_index=frame_index,
+                        hand_anchor=hand_anchor,
+                        shaft_line=None,
+                        confidence=0.0,
+                        candidate_count=0,
+                        detected=False,
+                        failure_reason=(
+                            failure_reason
+                        ),
+                    )
+                )
+
+                save_club_detection_visualization(
+                    debug_image_path,
+                    visualization,
+                )
+
                 frame_results.append(
                     {
                         "phase": phase_name,
@@ -869,15 +936,45 @@ def analyze_club_detection(
                         "shaftLine": None,
                         "candidateCount": 0,
                         "failureReason": (
-                            "No reliable shaft-line "
-                            "candidate was found near "
-                            "the detected hands."
+                            failure_reason
+                        ),
+                        "debugImagePath": str(
+                            debug_image_path
                         ),
                     }
                 )
+
                 continue
 
             best_candidate = candidates[0]
+
+            confidence = round(
+                best_candidate["score"],
+                3,
+            )
+
+            shaft_line = best_candidate["line"]
+
+            visualization = (
+                draw_club_detection_visualization(
+                    rotated_frame,
+                    phase_name=phase_name,
+                    frame_index=frame_index,
+                    hand_anchor=hand_anchor,
+                    shaft_line=shaft_line,
+                    confidence=confidence,
+                    candidate_count=len(
+                        candidates
+                    ),
+                    detected=True,
+                    failure_reason=None,
+                )
+            )
+
+            save_club_detection_visualization(
+                debug_image_path,
+                visualization,
+            )
 
             frame_results.append(
                 {
@@ -887,10 +984,7 @@ def analyze_club_detection(
                         timestamp_seconds
                     ),
                     "detected": True,
-                    "confidence": round(
-                        best_candidate["score"],
-                        3,
-                    ),
+                    "confidence": confidence,
                     "handAnchor": {
                         "x": round(
                             hand_anchor["x"],
@@ -901,13 +995,14 @@ def analyze_club_detection(
                             3,
                         ),
                     },
-                    "shaftLine": (
-                        best_candidate["line"]
-                    ),
+                    "shaftLine": shaft_line,
                     "candidateCount": len(
                         candidates
                     ),
                     "failureReason": None,
+                    "debugImagePath": str(
+                        debug_image_path
+                    ),
                 }
             )
     finally:
@@ -917,6 +1012,12 @@ def analyze_club_detection(
         frame
         for frame in frame_results
         if frame["detected"]
+    ]
+
+    visualized_results = [
+        frame
+        for frame in frame_results
+        if frame["debugImagePath"] is not None
     ]
 
     detected_count = len(
@@ -941,6 +1042,9 @@ def analyze_club_detection(
         "sourceVideo": str(
             resolved_video_path
         ),
+        "visualizationDirectory": str(
+            resolved_visualization_directory
+        ),
         "assumptions": {
             "detectedObject": (
                 "probable-golf-shaft-line"
@@ -950,6 +1054,13 @@ def analyze_club_detection(
             ),
             "referenceFrameSource": (
                 "golf-phase-refiner"
+            ),
+            "visualizations": (
+                "Debug images show the selected "
+                "shaft candidate and detected hand "
+                "anchor for inspection. They are "
+                "diagnostic artifacts and are not "
+                "part of the final coaching report."
             ),
             "limitations": [
                 (
@@ -1000,6 +1111,9 @@ def analyze_club_detection(
             "selectedRotation": (
                 selected_rotation
             ),
+            "visualizationCount": len(
+                visualized_results
+            ),
         },
         "frames": frame_results,
     }
@@ -1026,6 +1140,9 @@ def analyze_club_detection(
     return {
         "clubDetectionPath": str(
             resolved_output_path
+        ),
+        "clubVisualizationDirectory": str(
+            resolved_visualization_directory
         ),
         "clubDetection": result,
     }

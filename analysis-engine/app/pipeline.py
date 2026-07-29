@@ -180,6 +180,25 @@ def run_analysis_pipeline(
         club_detection_path_value
     ).resolve()
 
+    club_visualization_directory_value = (
+        club_detection_result.get(
+            "clubVisualizationDirectory"
+        )
+    )
+
+    if not isinstance(
+        club_visualization_directory_value,
+        str,
+    ):
+        raise RuntimeError(
+            "Club detection did not return "
+            "a visualization directory."
+        )
+
+    club_visualization_directory = Path(
+        club_visualization_directory_value
+    ).resolve()
+
     club_detection_payload = (
         club_detection_result.get(
             "clubDetection"
@@ -244,6 +263,9 @@ def run_analysis_pipeline(
             ),
             "clubDetectionPath": str(
                 club_detection_path
+            ),
+            "clubVisualizationDirectory": str(
+                club_visualization_directory
             ),
             "golfMetricsPath": str(
                 golf_metrics_path
