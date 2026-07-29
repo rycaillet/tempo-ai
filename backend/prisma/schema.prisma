@@ -30,7 +30,8 @@ model Analysis {
   consistencyScore Int?
   primaryFinding   String?
   recommendation   String?
-  analysisReport Json?
+  phaseTimings     Json?
+  analysisReport   Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
