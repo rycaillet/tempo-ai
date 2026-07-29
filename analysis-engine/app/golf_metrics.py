@@ -28,6 +28,9 @@ from app.metrics.impact_position import (
 from app.metrics.rotation import (
     build_rotation_metrics,
 )
+from app.metrics.shaft_lean import (
+    build_shaft_lean_metrics,
+)
 from app.metrics.weight_shift import (
     build_weight_shift_metrics,
 )
@@ -1438,6 +1441,14 @@ def build_registered_rotation(
         references=context["references"],
     )
 
+def build_registered_shaft_lean(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_shaft_lean_metrics(
+        club_detection=context[
+            "club_detection"
+        ],
+    )
 
 METRIC_DEFINITIONS = (
     MetricDefinition(
@@ -1714,6 +1725,61 @@ METRIC_DEFINITIONS = (
             ),
         ),
     ),
+    MetricDefinition(
+        key="shaftLean",
+        display_name="Shaft lean",
+        builder=build_registered_shaft_lean,
+        summary_fields=(
+            SummaryField(
+                output_key="shaftLeanClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="shaftLeanConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key=(
+                    "shaftLeanMeasurementCompleteness"
+                ),
+                value_path=(
+                    "measurementCompleteness",
+                    "ratio",
+                ),
+            ),
+            SummaryField(
+                output_key=(
+                    "shaftLeanDegreesFromVertical"
+                ),
+                value_path=(
+                    "measurements",
+                    "signedLeanFromVerticalDegrees",
+                ),
+            ),
+            SummaryField(
+                output_key=(
+                    "shaftLeanCameraRelativeDirection"
+                ),
+                value_path=(
+                    "measurements",
+                    "cameraRelativeDirection",
+                ),
+            ),
+            SummaryField(
+                output_key="shaftLeanFeedbackStatus",
+                value_path=("feedback", "status"),
+            ),
+            SummaryField(
+                output_key=(
+                    "shaftLeanFeedbackDeliveryStatus"
+                ),
+                value_path=(
+                    "feedback",
+                    "deliveryStatus",
+                ),
+            ),
+        ),
+    ),
 )
 
 METRIC_SCORING_WEIGHTS = {
@@ -1724,6 +1790,7 @@ METRIC_SCORING_WEIGHTS = {
     "headStability": 10.0,
     "weightShift": 15.0,
     "rotation": 15.0,
+    "shaftLean": 0.0,
 }
 
 
@@ -1745,12 +1812,23 @@ validate_scoring_weights(METRIC_REGISTRY)
 def analyze_golf_metrics(
     geometry_path: Path,
     refined_phases_path: Path,
+    club_detection_path: Path | None = None,
     output_path: Path | None = None,
     handedness: Handedness = "right",
     coaching_provider: CoachingProvider | None = None,
 ) -> dict[str, Any]:
     geometry_data = load_json(geometry_path)
-    refined_phases_data = load_json(refined_phases_path)
+    refined_phases_data = load_json(
+        refined_phases_path
+    )
+
+    club_detection_data = (
+        load_json(club_detection_path)
+        if club_detection_path is not None
+        else {
+            "frames": [],
+        }
+    )
 
     metadata = geometry_data.get("metadata")
     orientation = geometry_data.get("orientation")
@@ -1862,6 +1940,9 @@ def analyze_golf_metrics(
         "frame_width": frame_width,
         "frame_height": frame_height,
         "handedness": handedness,
+        "club_detection": (
+            club_detection_data
+        ),
     }
 
     registered_metrics = build_registered_metrics(
@@ -1901,6 +1982,13 @@ def analyze_golf_metrics(
             "refinedPhasesPath": str(
                 refined_phases_path.resolve()
             ),
+            "clubDetectionPath": (
+                str(
+                    club_detection_path.resolve()
+                )
+                if club_detection_path is not None
+                else None
+            ),
         },
         coordinate_system={
             "space": (
@@ -1934,6 +2022,13 @@ def analyze_golf_metrics(
             "rotationMeasurements": (
                 "Shoulder and hip tilt are 2D image-plane "
                 "measurements, not true 3D body rotation."
+            ),
+            "shaftLeanMeasurement": (
+                "Shaft lean is measured in the two-dimensional "
+                "rotated video frame relative to image vertical. "
+                "The current metric reports image-left or "
+                "image-right direction and does not yet claim "
+                "forward or backward shaft lean."
             ),
             "addressPostureFeedback": (
                 "Address posture classifications use prototype "
@@ -2075,6 +2170,16 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--club-detection",
+        type=Path,
+        default=None,
+        help=(
+            "Optional path to the club-detection JSON "
+            "artifact used for Shaft Lean."
+        ),
+    )
+
+    parser.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -2104,6 +2209,7 @@ def main() -> None:
         result = analyze_golf_metrics(
             geometry_path=args.geometry_path,
             refined_phases_path=args.refined_phases_path,
+            club_detection_path=args.club_detection,
             output_path=args.output,
             handedness=args.handedness,
         )

@@ -217,6 +217,7 @@ def run_analysis_pipeline(
     metrics_result = analyze_golf_metrics(
         geometry_path=geometry_analysis_path,
         refined_phases_path=refined_phases_path,
+        club_detection_path=club_detection_path,
         output_path=report_output_path,
         handedness=handedness,
     )
