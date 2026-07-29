@@ -72,8 +72,26 @@ function getFirstString(
   return undefined;
 }
 
+function getFirstJsonRecord(
+  source: unknown,
+  candidatePaths: readonly (readonly string[])[],
+): Prisma.InputJsonObject | undefined {
+  for (const candidatePath of candidatePaths) {
+    const value = getNestedValue(source, candidatePath);
+
+    if (isJsonRecord(value)) {
+      return value as Prisma.InputJsonObject;
+    }
+  }
+
+  return undefined;
+}
+
 function extractFirstMessage(value: unknown): string | undefined {
-  if (typeof value === "string" && value.trim().length > 0) {
+  if (
+    typeof value === "string" &&
+    value.trim().length > 0
+  ) {
     return value.trim();
   }
 
@@ -100,6 +118,8 @@ function extractFirstMessage(value: unknown): string | undefined {
     "finding",
     "recommendation",
     "title",
+    "primaryFocus",
+    "overallFinding",
   ] as const;
 
   for (const key of preferredKeys) {
@@ -152,12 +172,22 @@ export async function completeAnalysis(
   ]);
 
   const tempoRatio = getFirstNumber(report, [
+    [
+      "metrics",
+      "tempo",
+      "backswingToDownswingRatio",
+    ],
     ["summary", "tempoRatio"],
     ["metrics", "tempo", "ratio"],
     ["metrics", "tempo", "tempoRatio"],
   ]);
 
   const backswingSeconds = getFirstNumber(report, [
+    [
+      "metrics",
+      "tempo",
+      "backswingDurationSeconds",
+    ],
     [
       "metrics",
       "tempo",
@@ -168,6 +198,11 @@ export async function completeAnalysis(
   ]);
 
   const downswingSeconds = getFirstNumber(report, [
+    [
+      "metrics",
+      "tempo",
+      "downswingDurationSeconds",
+    ],
     [
       "metrics",
       "tempo",
@@ -184,7 +219,10 @@ export async function completeAnalysis(
 
   const primaryFinding =
     getFirstString(report, [
+      ["findings", "overallFinding"],
       ["summary", "primaryFinding"],
+      ["coaching", "headline"],
+      ["coaching", "overview"],
       ["coaching", "primaryFinding"],
     ]) ??
     extractFirstMessage(
@@ -193,12 +231,23 @@ export async function completeAnalysis(
 
   const recommendation =
     getFirstString(report, [
+      ["coaching", "primaryFocus"],
       ["summary", "recommendation"],
       ["coaching", "recommendation"],
+      [
+        "recommendations",
+        "recommendations",
+        "0",
+        "summary",
+      ],
     ]) ??
     extractFirstMessage(
       getNestedValue(report, ["recommendations"]),
     );
+
+  const phaseTimings = getFirstJsonRecord(report, [
+    ["phaseFrames"],
+  ]);
 
   return prisma.analysis.update({
     where: {
@@ -235,7 +284,9 @@ export async function completeAnalysis(
 
       ...(consistencyScore !== undefined
         ? {
-            consistencyScore: Math.round(consistencyScore),
+            consistencyScore: Math.round(
+              consistencyScore,
+            ),
           }
         : {}),
 
@@ -248,6 +299,12 @@ export async function completeAnalysis(
       ...(recommendation
         ? {
             recommendation,
+          }
+        : {}),
+
+      ...(phaseTimings
+        ? {
+            phaseTimings,
           }
         : {}),
     },
