@@ -1,7 +1,8 @@
-import { demoAnalysis } from "../data/analysis";
 import type { AnalysisRecord } from "../services/analysisService";
 import type {
   FindingSeverity,
+  PhaseCoaching,
+  PoseVariant,
   PracticePlanItem,
   SwingAnalysis,
   SwingFinding,
@@ -10,6 +11,7 @@ import type {
 } from "../types/analysis";
 import type {
   BackendAnalysisReport,
+  BackendImprovementPriority,
   BackendMetricKey,
   BackendPhaseFrame,
   BackendPhaseFrames,
@@ -74,11 +76,82 @@ const metricOrder: BackendMetricKey[] = [
   "impactPosition",
 ];
 
+type PhaseDefinition = {
+  id: SwingPhase["id"];
+  label: string;
+  poseVariant: PoseVariant;
+  frameKey: keyof BackendPhaseFrames;
+  legacyKey: keyof LegacyPhaseTimings;
+  findingAliases: string[];
+};
+
+const phaseDefinitions: PhaseDefinition[] = [
+  {
+    id: "address",
+    label: "Address",
+    poseVariant: "address",
+    frameKey: "addressReference",
+    legacyKey: "address",
+    findingAliases: ["address"],
+  },
+  {
+    id: "takeaway",
+    label: "Takeaway",
+    poseVariant: "takeaway",
+    frameKey: "takeawayReference",
+    legacyKey: "takeaway",
+    findingAliases: ["takeaway"],
+  },
+  {
+    id: "top",
+    label: "Top",
+    poseVariant: "top",
+    frameKey: "topOfBackswing",
+    legacyKey: "top",
+    findingAliases: ["top", "backswing"],
+  },
+  {
+    id: "downswing",
+    label: "Downswing",
+    poseVariant: "downswing",
+    frameKey: "downswingStart",
+    legacyKey: "downswing",
+    findingAliases: [
+      "downswing",
+      "transition",
+      "backswing and downswing",
+    ],
+  },
+  {
+    id: "impact",
+    label: "Impact",
+    poseVariant: "impact",
+    frameKey: "impactReference",
+    legacyKey: "impact",
+    findingAliases: ["impact"],
+  },
+  {
+    id: "finish",
+    label: "Finish",
+    poseVariant: "finish",
+    frameKey: "finishReference",
+    legacyKey: "finish",
+    findingAliases: ["finish"],
+  },
+];
+
+function clampScore(score: number) {
+  return Math.min(
+    100,
+    Math.max(0, Math.round(score)),
+  );
+}
+
 function formatAnalysisDate(dateValue: string) {
   const date = new Date(dateValue);
 
   if (Number.isNaN(date.getTime())) {
-    return demoAnalysis.summary.date;
+    return "Date unavailable";
   }
 
   return new Intl.DateTimeFormat("en-US", {
@@ -99,7 +172,7 @@ function createAnalysisTitle(filename: string) {
     .trim();
 
   if (!cleanedName) {
-    return demoAnalysis.summary.title;
+    return "Swing Analysis";
   }
 
   return cleanedName.replace(
@@ -153,8 +226,13 @@ function getTempoRatio(
 function createMetricDescription(
   metricKey: BackendMetricKey,
   classification: string | undefined,
+  reason: string | null | undefined,
   record: AnalysisRecord,
 ) {
+  if (reason?.trim()) {
+    return reason.trim();
+  }
+
   const classificationLabel =
     formatClassification(classification);
 
@@ -186,48 +264,52 @@ function mapMetrics(
   const reportMetrics =
     record.analysisReport?.scoring?.metrics;
 
-  if (!reportMetrics) {
-    return demoAnalysis.metrics.map((metric) => {
-      const searchableName =
-        `${metric.id} ${metric.label}`.toLowerCase();
+  const mappedMetrics = metricOrder.flatMap(
+    (metricKey): SwingMetric[] => {
+      const metric = reportMetrics?.[metricKey];
 
       if (
-        searchableName.includes("consistency") &&
-        record.consistencyScore !== null
+        !metric ||
+        typeof metric.rawScore !== "number"
       ) {
-        return {
-          ...metric,
-          score: record.consistencyScore,
-        };
+        return [];
       }
 
-      return metric;
-    });
+      return [
+        {
+          id: metricKey,
+          label: metricDisplayNames[metricKey],
+          score: clampScore(metric.rawScore),
+          description: createMetricDescription(
+            metricKey,
+            metric.classification,
+            metric.reason,
+            record,
+          ),
+        },
+      ];
+    },
+  );
+
+  if (mappedMetrics.length > 0) {
+    return mappedMetrics;
   }
 
-  return metricOrder.flatMap((metricKey) => {
-    const metric = reportMetrics[metricKey];
-
-    if (
-      !metric ||
-      typeof metric.rawScore !== "number"
-    ) {
-      return [];
-    }
-
+  if (record.consistencyScore !== null) {
     return [
       {
-        id: metricKey,
-        label: metricDisplayNames[metricKey],
-        score: Math.round(metric.rawScore),
-        description: createMetricDescription(
-          metricKey,
-          metric.classification,
-          record,
+        id: "consistency",
+        label: "Swing Consistency",
+        score: clampScore(
+          record.consistencyScore,
         ),
+        description:
+          "Measures the repeatability and stability of the detected swing movement.",
       },
     ];
-  });
+  }
+
+  return [];
 }
 
 function mapSeverity(
@@ -260,7 +342,8 @@ function createFindingDrillInstructions(
   return (
     recommendation.summary ??
     recommendation.rationale ??
-    "Use slow practice swings to rehearse this movement pattern."
+    recommendation.focus ??
+    "Use slow practice swings to rehearse the identified movement priority."
   );
 }
 
@@ -271,16 +354,17 @@ function mapRecommendationToFinding(
   const metricKey =
     recommendation.metricKey ?? "tempo";
 
+  const displayName =
+    recommendation.displayName ??
+    metricDisplayNames[metricKey];
+
   return {
     id: `finding-${index + 1}`,
     priority:
       recommendation.priority ?? index + 1,
     title:
       recommendation.title ??
-      `Improve ${
-        recommendation.displayName ??
-        metricDisplayNames[metricKey]
-      }`,
+      `Improve ${displayName}`,
     phase: metricPhaseNames[metricKey],
     severity: mapSeverity(
       recommendation.severity,
@@ -288,7 +372,7 @@ function mapRecommendationToFinding(
     evidence:
       recommendation.rationale ??
       recommendation.caution ??
-      "The analysis engine identified this as an improvement priority.",
+      "The analysis engine identified this metric as an improvement priority.",
     explanation:
       recommendation.summary ??
       recommendation.focus ??
@@ -296,10 +380,7 @@ function mapRecommendationToFinding(
     drill: {
       name:
         recommendation.focus ??
-        `${
-          recommendation.displayName ??
-          metricDisplayNames[metricKey]
-        } Practice`,
+        `${displayName} Practice`,
       instructions:
         createFindingDrillInstructions(
           recommendation,
@@ -308,12 +389,46 @@ function mapRecommendationToFinding(
   };
 }
 
+function mapPriorityToFinding(
+  priority: BackendImprovementPriority,
+  index: number,
+  fallbackInstruction: string | null,
+): SwingFinding {
+  const metricKey =
+    priority.metricKey ?? "tempo";
+
+  const displayName =
+    priority.displayName ??
+    metricDisplayNames[metricKey];
+
+  return {
+    id: `finding-${index + 1}`,
+    priority: index + 1,
+    title: `Improve ${displayName}`,
+    phase: metricPhaseNames[metricKey],
+    severity: mapSeverity(priority.severity),
+    evidence:
+      priority.reason ??
+      "The scoring report identified this metric as an improvement priority.",
+    explanation:
+      priority.reason ??
+      `The ${displayName.toLowerCase()} result has the greatest opportunity for improvement.`,
+    drill: {
+      name: `${displayName} Practice`,
+      instructions:
+        fallbackInstruction ??
+        `Use slow-motion practice swings while focusing on ${displayName.toLowerCase()}.`,
+    },
+  };
+}
+
 function mapFindings(
   record: AnalysisRecord,
 ): SwingFinding[] {
+  const report = record.analysisReport;
+
   const recommendations =
-    record.analysisReport?.recommendations
-      ?.recommendations;
+    report?.recommendations?.recommendations;
 
   if (
     recommendations &&
@@ -328,23 +443,54 @@ function mapFindings(
       .map(mapRecommendationToFinding);
   }
 
-  return demoAnalysis.findings.map(
-    (finding, index) => {
-      if (index !== 0) {
-        return finding;
-      }
+  const improvementPriorities =
+    report?.findings?.improvementPriorities;
 
-      return {
-        ...finding,
+  if (
+    improvementPriorities &&
+    improvementPriorities.length > 0
+  ) {
+    return improvementPriorities.map(
+      (priority, index) =>
+        mapPriorityToFinding(
+          priority,
+          index,
+          record.recommendation,
+        ),
+    );
+  }
+
+  if (
+    record.primaryFinding ||
+    record.recommendation
+  ) {
+    return [
+      {
+        id: "finding-1",
+        priority: 1,
         title:
           record.primaryFinding ??
-          finding.title,
+          "Primary Swing Priority",
+        phase: "Overall Swing",
+        severity: "Medium",
+        evidence:
+          record.primaryFinding ??
+          "The stored analysis identified an overall swing priority.",
         explanation:
           record.recommendation ??
-          finding.explanation,
-      };
-    },
-  );
+          record.primaryFinding ??
+          "Review the stored analysis feedback before the next practice session.",
+        drill: {
+          name: "Focused Rehearsal",
+          instructions:
+            record.recommendation ??
+            "Use slow practice swings to rehearse the identified movement.",
+        },
+      },
+    ];
+  }
+
+  return [];
 }
 
 function isBackendPhaseFrames(
@@ -401,9 +547,10 @@ function getPhaseTimestamp(
 
   if (
     typeof timestamp !== "number" ||
-    !Number.isFinite(timestamp)
+    !Number.isFinite(timestamp) ||
+    timestamp < 0
   ) {
-    return null;
+    return "0s";
   }
 
   return `${timestamp
@@ -411,50 +558,78 @@ function getPhaseTimestamp(
     .replace(/\.?0+$/, "")}s`;
 }
 
+function findPhaseFinding(
+  phaseDefinition: PhaseDefinition,
+  findings: SwingFinding[],
+) {
+  return findings.find((finding) => {
+    const findingPhase =
+      finding.phase.toLowerCase();
+
+    return phaseDefinition.findingAliases.some(
+      (alias) =>
+        findingPhase.includes(
+          alias.toLowerCase(),
+        ),
+    );
+  });
+}
+
+function createPhaseCoaching(
+  phaseDefinition: PhaseDefinition,
+  findings: SwingFinding[],
+  coachingSummary: string,
+): PhaseCoaching {
+  const finding = findPhaseFinding(
+    phaseDefinition,
+    findings,
+  );
+
+  return {
+    headline:
+      finding?.title ??
+      `${phaseDefinition.label} checkpoint`,
+    message:
+      finding?.explanation ??
+      coachingSummary,
+    poseVariant: phaseDefinition.poseVariant,
+    ...(finding
+      ? { findingId: finding.id }
+      : {}),
+  };
+}
+
 function mapPhases(
   record: AnalysisRecord,
+  findings: SwingFinding[],
+  coachingSummary: string,
 ): SwingPhase[] {
   const phaseFrames =
     getReportPhaseFrames(record);
+
   const legacyTimings =
     getLegacyPhaseTimings(record);
 
-  const timestamps: Record<
-    SwingPhase["id"],
-    string | null
-  > = {
-    address: getPhaseTimestamp(
-      phaseFrames?.addressReference,
-      legacyTimings?.address,
-    ),
-    takeaway: getPhaseTimestamp(
-      phaseFrames?.takeawayReference,
-      legacyTimings?.takeaway,
-    ),
-    top: getPhaseTimestamp(
-      phaseFrames?.topOfBackswing,
-      legacyTimings?.top,
-    ),
-    downswing: getPhaseTimestamp(
-      phaseFrames?.downswingStart,
-      legacyTimings?.downswing,
-    ),
-    impact: getPhaseTimestamp(
-      phaseFrames?.impactReference,
-      legacyTimings?.impact,
-    ),
-    finish: getPhaseTimestamp(
-      phaseFrames?.finishReference,
-      legacyTimings?.finish,
-    ),
-  };
-
-  return demoAnalysis.phases.map((phase) => ({
-    ...phase,
-    timestamp:
-      timestamps[phase.id] ??
-      phase.timestamp,
-  }));
+  return phaseDefinitions.map(
+    (phaseDefinition) => ({
+      id: phaseDefinition.id,
+      label: phaseDefinition.label,
+      timestamp: getPhaseTimestamp(
+        phaseFrames?.[
+          phaseDefinition.frameKey
+        ],
+        legacyTimings?.[
+          phaseDefinition.legacyKey
+        ],
+      ),
+      status: "complete",
+      coaching: createPhaseCoaching(
+        phaseDefinition,
+        findings,
+        coachingSummary,
+      ),
+    }),
+  );
 }
 
 function createCoachingSummary(
@@ -462,16 +637,22 @@ function createCoachingSummary(
 ) {
   const report = record.analysisReport;
 
+  const storedSummary = [
+    record.primaryFinding,
+    record.recommendation,
+  ]
+    .filter(
+      (value): value is string =>
+        Boolean(value?.trim()),
+    )
+    .join(" ");
+
   return (
     report?.coaching?.overview ??
     report?.findings?.overallFinding ??
     report?.scoring?.interpretation?.summary ??
-    [record.primaryFinding, record.recommendation]
-      .filter(
-        (value): value is string =>
-          Boolean(value),
-      )
-      .join(" ")
+    (storedSummary ||
+      "The swing analysis completed successfully, but no detailed coaching summary was returned.")
   );
 }
 
@@ -487,13 +668,13 @@ function createStrengthSummary(
       strongestFinding.displayName &&
       typeof strongestFinding.score === "number"
     ) {
-      return `${strongestFinding.displayName} was a strength in this swing, scoring ${Math.round(
+      return `${strongestFinding.displayName} was a strength in this swing, scoring ${clampScore(
         strongestFinding.score,
       )} out of 100.`;
     }
 
-    if (strongestFinding.reason) {
-      return strongestFinding.reason;
+    if (strongestFinding.reason?.trim()) {
+      return strongestFinding.reason.trim();
     }
   }
 
@@ -506,14 +687,17 @@ function createStrengthSummary(
   }
 
   if (record.consistencyScore !== null) {
-    return `Your swing consistency scored ${record.consistencyScore} out of 100.`;
+    return `Swing consistency scored ${clampScore(
+      record.consistencyScore,
+    )} out of 100.`;
   }
 
-  return demoAnalysis.summary.strength;
+  return "No individual strength summary was returned for this analysis.";
 }
 
 function mapPracticePlan(
   report: BackendAnalysisReport | null,
+  storedRecommendation: string | null,
 ): PracticePlanItem[] {
   const recommendations =
     report?.recommendations?.recommendations;
@@ -554,9 +738,12 @@ function mapPracticePlan(
         label: "Warm-up",
         duration: "5 minutes",
         instructions:
-          report?.coaching?.actionSteps?.join(
-            " ",
-          ) ??
+          report?.coaching?.actionSteps
+            ?.filter(
+              (actionStep) =>
+                actionStep.trim().length > 0,
+            )
+            .join(" ") ||
           "Begin with slow-motion rehearsals of the primary movement priority.",
       },
       ...recommendationItems,
@@ -569,11 +756,14 @@ function mapPracticePlan(
     ];
   }
 
-  if (
-    report?.coaching?.actionSteps &&
-    report.coaching.actionSteps.length > 0
-  ) {
-    return report.coaching.actionSteps.map(
+  const actionSteps =
+    report?.coaching?.actionSteps?.filter(
+      (actionStep) =>
+        actionStep.trim().length > 0,
+    );
+
+  if (actionSteps && actionSteps.length > 0) {
+    return actionSteps.map(
       (actionStep, index) => ({
         label:
           index === 0
@@ -588,7 +778,18 @@ function mapPracticePlan(
     );
   }
 
-  return demoAnalysis.practicePlan;
+  if (storedRecommendation?.trim()) {
+    return [
+      {
+        label: "Primary focus",
+        duration: "10 minutes",
+        instructions:
+          storedRecommendation.trim(),
+      },
+    ];
+  }
+
+  return [];
 }
 
 export function mapBackendAnalysis(
@@ -598,21 +799,22 @@ export function mapBackendAnalysis(
   const coachingSummary =
     createCoachingSummary(record);
 
+  const findings = mapFindings(record);
+
   const overallScore =
     record.analysisReport?.scoring
       ?.overallScore ??
     record.swingScore ??
-    demoAnalysis.summary.overallScore;
+    record.consistencyScore ??
+    0;
 
   return {
-    ...demoAnalysis,
     videoUrl: createVideoUrl(
       record.storedFilename,
       apiOrigin,
     ),
     videoMimeType: record.mimeType,
     summary: {
-      ...demoAnalysis.summary,
       id: record.id,
       title: createAnalysisTitle(
         record.originalFilename,
@@ -623,18 +825,22 @@ export function mapBackendAnalysis(
       date: formatAnalysisDate(
         record.createdAt,
       ),
-      overallScore: Math.round(overallScore),
-      summary:
-        coachingSummary ||
-        demoAnalysis.summary.summary,
+      overallScore:
+        clampScore(overallScore),
+      summary: coachingSummary,
       strength:
         createStrengthSummary(record),
     },
-    phases: mapPhases(record),
+    phases: mapPhases(
+      record,
+      findings,
+      coachingSummary,
+    ),
     metrics: mapMetrics(record),
-    findings: mapFindings(record),
+    findings,
     practicePlan: mapPracticePlan(
       record.analysisReport,
+      record.recommendation,
     ),
   };
 }
