@@ -18,6 +18,12 @@ from app.club_visualizer import (
     draw_club_detection_visualization,
     save_club_detection_visualization,
 )
+from app.club_search_region import (
+    SearchRegion,
+    build_pose_guided_search_region,
+    crop_frame_to_search_region,
+    translate_coordinates_to_full_frame,
+)
 
 
 LEFT_WRIST_INDEX = 15
@@ -34,7 +40,9 @@ REFERENCE_PHASES = (
 
 MINIMUM_WRIST_VISIBILITY = 0.35
 MINIMUM_LINE_LENGTH_RATIO = 0.08
+MAXIMUM_LINE_LENGTH_RATIO = 0.55
 MAXIMUM_HAND_DISTANCE_RATIO = 0.22
+MAXIMUM_GRIP_ENDPOINT_DISTANCE_RATIO = 0.12
 
 CANNY_LOW_THRESHOLD = 50
 CANNY_HIGH_THRESHOLD = 150
@@ -58,6 +66,8 @@ class ShaftCandidate(TypedDict):
     line: ShaftLine
     handDistancePixels: float
     handDistanceRatio: float
+    nearestEndpointDistancePixels: float
+    nearestEndpointDistanceRatio: float
     lengthRatio: float
     score: float
 
@@ -362,6 +372,26 @@ def distance_from_point_to_segment(
         point["y"] - closest_y,
     )
 
+def calculate_nearest_endpoint_distance(
+    point: PixelPoint,
+    start: PixelPoint,
+    end: PixelPoint,
+) -> float:
+    start_distance = math.hypot(
+        point["x"] - start["x"],
+        point["y"] - start["y"],
+    )
+
+    end_distance = math.hypot(
+        point["x"] - end["x"],
+        point["y"] - end["y"],
+    )
+
+    return min(
+        start_distance,
+        end_distance,
+    )
+
 
 def build_shaft_candidate(
     coordinates: Sequence[int],
@@ -371,6 +401,9 @@ def build_shaft_candidate(
     frame_height: int,
 ) -> ShaftCandidate | None:
     if len(coordinates) != 4:
+        return None
+
+    if frame_width <= 0 or frame_height <= 0:
         return None
 
     start: PixelPoint = {
@@ -403,6 +436,8 @@ def build_shaft_candidate(
     if (
         length_ratio
         < MINIMUM_LINE_LENGTH_RATIO
+        or length_ratio
+        > MAXIMUM_LINE_LENGTH_RATIO
     ):
         return None
 
@@ -424,12 +459,31 @@ def build_shaft_candidate(
     ):
         return None
 
+    nearest_endpoint_distance_pixels = (
+        calculate_nearest_endpoint_distance(
+            hand_anchor,
+            start,
+            end,
+        )
+    )
+
+    nearest_endpoint_distance_ratio = (
+        nearest_endpoint_distance_pixels
+        / diagonal
+    )
+
+    if (
+        nearest_endpoint_distance_ratio
+        > MAXIMUM_GRIP_ENDPOINT_DISTANCE_RATIO
+    ):
+        return None
+
     length_score = min(
         1.0,
         length_ratio / 0.35,
     )
 
-    proximity_score = max(
+    segment_proximity_score = max(
         0.0,
         1.0
         - (
@@ -438,9 +492,19 @@ def build_shaft_candidate(
         ),
     )
 
+    endpoint_proximity_score = max(
+        0.0,
+        1.0
+        - (
+            nearest_endpoint_distance_ratio
+            / MAXIMUM_GRIP_ENDPOINT_DISTANCE_RATIO
+        ),
+    )
+
     score = (
-        0.58 * proximity_score
-        + 0.42 * length_score
+        0.42 * endpoint_proximity_score
+        + 0.33 * segment_proximity_score
+        + 0.25 * length_score
     )
 
     return {
@@ -467,6 +531,14 @@ def build_shaft_candidate(
             hand_distance_ratio,
             6,
         ),
+        "nearestEndpointDistancePixels": round(
+            nearest_endpoint_distance_pixels,
+            3,
+        ),
+        "nearestEndpointDistanceRatio": round(
+            nearest_endpoint_distance_ratio,
+            6,
+        ),
         "lengthRatio": round(
             length_ratio,
             6,
@@ -482,13 +554,24 @@ def detect_shaft_candidates(
     frame: np.ndarray,
     *,
     hand_anchor: PixelPoint,
+    search_region: SearchRegion,
 ) -> list[ShaftCandidate]:
     frame_height, frame_width = (
         frame.shape[:2]
     )
 
+    cropped_frame = (
+        crop_frame_to_search_region(
+            frame,
+            search_region,
+        )
+    )
+
+    if cropped_frame.size == 0:
+        return []
+
     grayscale = cv2.cvtColor(
-        frame,
+        cropped_frame,
         cv2.COLOR_BGR2GRAY,
     )
 
@@ -504,13 +587,15 @@ def detect_shaft_candidates(
         CANNY_HIGH_THRESHOLD,
     )
 
+    full_frame_diagonal = math.hypot(
+        frame_width,
+        frame_height,
+    )
+
     minimum_line_length = max(
         20,
         int(
-            math.hypot(
-                frame_width,
-                frame_height,
-            )
+            full_frame_diagonal
             * MINIMUM_LINE_LENGTH_RATIO
         ),
     )
@@ -527,13 +612,22 @@ def detect_shaft_candidates(
     if lines is None:
         return []
 
-    candidates: list[ShaftCandidate] = []
+    candidates: list[
+        ShaftCandidate
+    ] = []
 
     for line in lines:
-        coordinates = (
+        local_coordinates = (
             np.asarray(line)
             .reshape(-1)
             .tolist()
+        )
+
+        coordinates = (
+            translate_coordinates_to_full_frame(
+                local_coordinates,
+                search_region=search_region,
+            )
         )
 
         candidate = build_shaft_candidate(
@@ -878,11 +972,23 @@ def analyze_club_detection(
                 selected_rotation,
             )
 
+            search_region = (
+                build_pose_guided_search_region(
+                    pose_frame,
+                    hand_anchor=hand_anchor,
+                    frame_width=rotated_width,
+                    frame_height=rotated_height,
+                )
+            )
+
             candidates = (
                 detect_shaft_candidates(
                     rotated_frame,
                     hand_anchor=hand_anchor,
+                    search_region=search_region,
                 )
+                if search_region is not None
+                else []
             )
 
             debug_image_path = (
@@ -895,9 +1001,16 @@ def analyze_club_detection(
 
             if not candidates:
                 failure_reason = (
-                    "No reliable shaft-line "
-                    "candidate was found near "
-                    "the detected hands."
+                    (
+                        "A pose-guided club search "
+                        "region could not be created."
+                    )
+                    if search_region is None
+                    else (
+                        "No reliable shaft-line "
+                        "candidate was found inside "
+                        "the pose-guided search region."
+                    )
                 )
 
                 visualization = (
@@ -906,6 +1019,7 @@ def analyze_club_detection(
                         phase_name=phase_name,
                         frame_index=frame_index,
                         hand_anchor=hand_anchor,
+                        search_region=search_region,                       
                         shaft_line=None,
                         confidence=0.0,
                         candidate_count=0,
@@ -961,6 +1075,7 @@ def analyze_club_detection(
                     phase_name=phase_name,
                     frame_index=frame_index,
                     hand_anchor=hand_anchor,
+                    search_region=search_region,
                     shaft_line=shaft_line,
                     confidence=confidence,
                     candidate_count=len(
@@ -1051,6 +1166,13 @@ def analyze_club_detection(
             ),
             "coordinateSystem": (
                 "rotated-video-pixels"
+            ),
+            "candidateSearch": (
+                "Canny edge detection and the "
+                "probabilistic Hough transform run "
+                "inside an adaptive pose-guided "
+                "region extending from the golfer's "
+                "forearms through the detected hands."
             ),
             "referenceFrameSource": (
                 "golf-phase-refiner"
