@@ -177,6 +177,31 @@ def get_diagnostic_count(
     return 0
 
 
+def get_diagnostic_float(
+    diagnostics: Mapping[str, Any],
+    key: str,
+) -> float | None:
+    value = diagnostics.get(key)
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    return None
+
+
+def get_diagnostic_text(
+    diagnostics: Mapping[str, Any],
+    key: str,
+    default: str,
+) -> str:
+    value = diagnostics.get(key)
+
+    if isinstance(value, str):
+        return value
+
+    return default
+
+
 def build_candidate_diagnostic_lines(
     candidate_diagnostics: Mapping[str, Any] | None,
 ) -> list[str]:
@@ -187,17 +212,52 @@ def build_candidate_diagnostic_lines(
         candidate_diagnostics,
         "edgePixelCount",
     )
-    minimum_line_length = get_diagnostic_count(
+
+    primary_minimum = get_diagnostic_count(
         candidate_diagnostics,
-        "minimumLineLengthPixels",
+        "primaryMinimumLineLengthPixels",
     )
-    raw_lines = get_diagnostic_count(
+    primary_raw = get_diagnostic_count(
         candidate_diagnostics,
-        "rawHoughLineCount",
+        "primaryRawHoughLineCount",
     )
+
+    fallback_minimum = get_diagnostic_count(
+        candidate_diagnostics,
+        "fallbackMinimumLineLengthPixels",
+    )
+    fallback_raw = get_diagnostic_count(
+        candidate_diagnostics,
+        "fallbackRawHoughLineCount",
+    )
+
     accepted = get_diagnostic_count(
         candidate_diagnostics,
         "acceptedCandidateCount",
+    )
+
+    detection_pass_value = (
+        candidate_diagnostics.get(
+            "detectionPass",
+            "none",
+        )
+    )
+
+    detection_pass = (
+        detection_pass_value
+        if isinstance(
+            detection_pass_value,
+            str,
+        )
+        else "none"
+    )
+
+    fallback_attempted = (
+        candidate_diagnostics.get(
+            "fallbackAttempted",
+            False,
+        )
+        is True
     )
 
     invalid = (
@@ -210,6 +270,7 @@ def build_candidate_diagnostic_lines(
             "rejectedInvalidFrameDimensions",
         )
     )
+
     too_short = get_diagnostic_count(
         candidate_diagnostics,
         "rejectedTooShort",
@@ -227,16 +288,88 @@ def build_candidate_diagnostic_lines(
         "rejectedGripEndpointTooFar",
     )
 
+    fallback_status = (
+        "ran"
+        if fallback_attempted
+        else "skipped"
+    )
+
+    temporal_mode = get_diagnostic_text(
+        candidate_diagnostics,
+        "temporalSelectionMode",
+        "not_attempted",
+    )
+
+    temporal_evaluated = get_diagnostic_count(
+        candidate_diagnostics,
+        "temporalCandidatesEvaluated",
+    )
+
+    temporal_rejected = get_diagnostic_count(
+        candidate_diagnostics,
+        "temporalCandidatesRejected",
+    )
+
+    selected_temporal_score = get_diagnostic_float(
+        candidate_diagnostics,
+        "selectedTemporalScore",
+    )
+
+    selected_angle_change = get_diagnostic_float(
+        candidate_diagnostics,
+        "selectedAngleChangeDegrees",
+    )
+
+    selected_distal_shift = get_diagnostic_float(
+        candidate_diagnostics,
+        "selectedDistalShiftRatio",
+    )
+
+    temporal_score_label = (
+        f"{selected_temporal_score:.3f}"
+        if selected_temporal_score is not None
+        else "n/a"
+    )
+
+    angle_change_label = (
+        f"{selected_angle_change:.1f}deg"
+        if selected_angle_change is not None
+        else "n/a"
+    )
+
+    distal_shift_label = (
+        f"{selected_distal_shift:.3f}"
+        if selected_distal_shift is not None
+        else "n/a"
+    )
+
     return [
         (
             f"edges {edge_pixels} | "
-            f"min line {minimum_line_length}px | "
-            f"Hough {raw_lines} | accepted {accepted}"
+            f"pass {detection_pass} | "
+            f"accepted {accepted}"
+        ),
+        (
+            f"primary min {primary_minimum}px | "
+            f"Hough {primary_raw}"
+        ),
+        (
+            f"fallback {fallback_status} | "
+            f"min {fallback_minimum}px | "
+            f"Hough {fallback_raw}"
         ),
         (
             f"rejected invalid {invalid} | "
             f"short {too_short} | long {too_long} | "
             f"hands {too_far} | endpoint {endpoint_far}"
+        ),
+        (
+            f"temporal {temporal_mode} | "
+            f"evaluated {temporal_evaluated} | "
+            f"rejected {temporal_rejected} | "
+            f"score {temporal_score_label} | "
+            f"angle {angle_change_label} | "
+            f"distal {distal_shift_label}"
         ),
     ]
 
