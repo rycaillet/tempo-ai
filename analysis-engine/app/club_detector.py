@@ -77,6 +77,20 @@ class ShaftCandidate(TypedDict):
     score: float
 
 
+class CandidateDiagnostics(TypedDict):
+    croppedFrameEmpty: bool
+    edgePixelCount: int
+    minimumLineLengthPixels: int
+    rawHoughLineCount: int
+    rejectedInvalidCoordinates: int
+    rejectedInvalidFrameDimensions: int
+    rejectedTooShort: int
+    rejectedTooLong: int
+    rejectedTooFarFromHands: int
+    rejectedGripEndpointTooFar: int
+    acceptedCandidateCount: int
+
+
 class TemporalComparison(TypedDict):
     previousPhase: str
     previousFrameIndex: int
@@ -96,6 +110,7 @@ class ClubFrameDetection(TypedDict):
     handAnchor: PixelPoint | None
     shaftLine: ShaftLine | None
     candidateCount: int
+    candidateDiagnostics: CandidateDiagnostics | None
     failureReason: str | None
     debugImagePath: str | None
     temporalStatus: str
@@ -414,18 +429,34 @@ def calculate_nearest_endpoint_distance(
     )
 
 
-def build_shaft_candidate(
+def create_candidate_diagnostics() -> CandidateDiagnostics:
+    return {
+        "croppedFrameEmpty": False,
+        "edgePixelCount": 0,
+        "minimumLineLengthPixels": 0,
+        "rawHoughLineCount": 0,
+        "rejectedInvalidCoordinates": 0,
+        "rejectedInvalidFrameDimensions": 0,
+        "rejectedTooShort": 0,
+        "rejectedTooLong": 0,
+        "rejectedTooFarFromHands": 0,
+        "rejectedGripEndpointTooFar": 0,
+        "acceptedCandidateCount": 0,
+    }
+
+
+def evaluate_shaft_candidate(
     coordinates: Sequence[int],
     *,
     hand_anchor: PixelPoint,
     frame_width: int,
     frame_height: int,
-) -> ShaftCandidate | None:
+) -> tuple[ShaftCandidate | None, str | None]:
     if len(coordinates) != 4:
-        return None
+        return None, "invalid_coordinates"
 
     if frame_width <= 0 or frame_height <= 0:
-        return None
+        return None, "invalid_frame_dimensions"
 
     start: PixelPoint = {
         "x": float(coordinates[0]),
@@ -443,24 +474,20 @@ def build_shaft_candidate(
     )
 
     if diagonal <= 0.0:
-        return None
+        return None, "invalid_frame_dimensions"
 
     length_pixels = calculate_line_length(
         start,
         end,
     )
 
-    length_ratio = (
-        length_pixels / diagonal
-    )
+    length_ratio = length_pixels / diagonal
 
-    if (
-        length_ratio
-        < MINIMUM_LINE_LENGTH_RATIO
-        or length_ratio
-        > MAXIMUM_LINE_LENGTH_RATIO
-    ):
-        return None
+    if length_ratio < MINIMUM_LINE_LENGTH_RATIO:
+        return None, "too_short"
+
+    if length_ratio > MAXIMUM_LINE_LENGTH_RATIO:
+        return None, "too_long"
 
     hand_distance_pixels = (
         distance_from_point_to_segment(
@@ -474,11 +501,8 @@ def build_shaft_candidate(
         hand_distance_pixels / diagonal
     )
 
-    if (
-        hand_distance_ratio
-        > MAXIMUM_HAND_DISTANCE_RATIO
-    ):
-        return None
+    if hand_distance_ratio > MAXIMUM_HAND_DISTANCE_RATIO:
+        return None, "too_far_from_hands"
 
     nearest_endpoint_distance_pixels = (
         calculate_nearest_endpoint_distance(
@@ -497,7 +521,7 @@ def build_shaft_candidate(
         nearest_endpoint_distance_ratio
         > MAXIMUM_GRIP_ENDPOINT_DISTANCE_RATIO
     ):
-        return None
+        return None, "grip_endpoint_too_far"
 
     length_score = min(
         1.0,
@@ -568,7 +592,53 @@ def build_shaft_candidate(
             score,
             6,
         ),
+    }, None
+
+
+def build_shaft_candidate(
+    coordinates: Sequence[int],
+    *,
+    hand_anchor: PixelPoint,
+    frame_width: int,
+    frame_height: int,
+) -> ShaftCandidate | None:
+    candidate, _ = evaluate_shaft_candidate(
+        coordinates,
+        hand_anchor=hand_anchor,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
+
+    return candidate
+
+
+def record_candidate_rejection(
+    diagnostics: CandidateDiagnostics,
+    rejection_reason: str | None,
+) -> None:
+    rejection_key_by_reason = {
+        "invalid_coordinates": (
+            "rejectedInvalidCoordinates"
+        ),
+        "invalid_frame_dimensions": (
+            "rejectedInvalidFrameDimensions"
+        ),
+        "too_short": "rejectedTooShort",
+        "too_long": "rejectedTooLong",
+        "too_far_from_hands": (
+            "rejectedTooFarFromHands"
+        ),
+        "grip_endpoint_too_far": (
+            "rejectedGripEndpointTooFar"
+        ),
     }
+
+    key = rejection_key_by_reason.get(
+        rejection_reason
+    )
+
+    if key is not None:
+        diagnostics[key] += 1
 
 
 def detect_shaft_candidates(
@@ -576,9 +646,16 @@ def detect_shaft_candidates(
     *,
     hand_anchor: PixelPoint,
     search_region: SearchRegion,
+    diagnostics: CandidateDiagnostics | None = None,
 ) -> list[ShaftCandidate]:
     frame_height, frame_width = (
         frame.shape[:2]
+    )
+
+    active_diagnostics = (
+        diagnostics
+        if diagnostics is not None
+        else create_candidate_diagnostics()
     )
 
     cropped_frame = (
@@ -589,6 +666,9 @@ def detect_shaft_candidates(
     )
 
     if cropped_frame.size == 0:
+        active_diagnostics[
+            "croppedFrameEmpty"
+        ] = True
         return []
 
     grayscale = cv2.cvtColor(
@@ -608,6 +688,10 @@ def detect_shaft_candidates(
         CANNY_HIGH_THRESHOLD,
     )
 
+    active_diagnostics["edgePixelCount"] = int(
+        np.count_nonzero(edges)
+    )
+
     full_frame_diagonal = math.hypot(
         frame_width,
         frame_height,
@@ -621,6 +705,10 @@ def detect_shaft_candidates(
         ),
     )
 
+    active_diagnostics[
+        "minimumLineLengthPixels"
+    ] = minimum_line_length
+
     lines = cv2.HoughLinesP(
         edges,
         rho=1,
@@ -633,9 +721,11 @@ def detect_shaft_candidates(
     if lines is None:
         return []
 
-    candidates: list[
-        ShaftCandidate
-    ] = []
+    active_diagnostics[
+        "rawHoughLineCount"
+    ] = len(lines)
+
+    candidates: list[ShaftCandidate] = []
 
     for line in lines:
         local_coordinates = (
@@ -651,15 +741,26 @@ def detect_shaft_candidates(
             )
         )
 
-        candidate = build_shaft_candidate(
-            coordinates,
-            hand_anchor=hand_anchor,
-            frame_width=frame_width,
-            frame_height=frame_height,
+        candidate, rejection_reason = (
+            evaluate_shaft_candidate(
+                coordinates,
+                hand_anchor=hand_anchor,
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
         )
 
         if candidate is not None:
             candidates.append(candidate)
+        else:
+            record_candidate_rejection(
+                active_diagnostics,
+                rejection_reason,
+            )
+
+    active_diagnostics[
+        "acceptedCandidateCount"
+    ] = len(candidates)
 
     return sorted(
         candidates,
@@ -1032,6 +1133,7 @@ def analyze_club_detection(
                         "handAnchor": None,
                         "shaftLine": None,
                         "candidateCount": 0,
+                        "candidateDiagnostics": None,
                         "failureReason": (
                             "Pose timeline did not "
                             "contain the requested "
@@ -1091,6 +1193,7 @@ def analyze_club_detection(
                         "handAnchor": None,
                         "shaftLine": None,
                         "candidateCount": 0,
+                        "candidateDiagnostics": None,
                         "failureReason": (
                             "Reliable wrist "
                             "landmarks were not "
@@ -1130,6 +1233,7 @@ def analyze_club_detection(
                         "handAnchor": hand_anchor,
                         "shaftLine": None,
                         "candidateCount": 0,
+                        "candidateDiagnostics": None,
                         "failureReason": (
                             "The requested club-tracking "
                             "video frame could not be read."
@@ -1153,13 +1257,25 @@ def analyze_club_detection(
                 )
             )
 
+            candidate_diagnostics = (
+                create_candidate_diagnostics()
+                if search_region is not None
+                else None
+            )
+
             candidates = (
                 detect_shaft_candidates(
                     rotated_frame,
                     hand_anchor=hand_anchor,
                     search_region=search_region,
+                    diagnostics=(
+                        candidate_diagnostics
+                    ),
                 )
-                if search_region is not None
+                if (
+                    search_region is not None
+                    and candidate_diagnostics is not None
+                )
                 else []
             )
 
@@ -1195,6 +1311,9 @@ def analyze_club_detection(
                         shaft_line=None,
                         confidence=0.0,
                         candidate_count=0,
+                        candidate_diagnostics=(
+                            candidate_diagnostics
+                        ),
                         detected=False,
                         failure_reason=(
                             failure_reason
@@ -1230,6 +1349,9 @@ def analyze_club_detection(
                         "handAnchor": hand_anchor,
                         "shaftLine": None,
                         "candidateCount": 0,
+                        "candidateDiagnostics": (
+                            candidate_diagnostics
+                        ),
                         "failureReason": (
                             failure_reason
                         ),
@@ -1261,6 +1383,9 @@ def analyze_club_detection(
                     confidence=confidence,
                     candidate_count=len(
                         candidates
+                    ),
+                    candidate_diagnostics=(
+                        candidate_diagnostics
                     ),
                     detected=True,
                     failure_reason=None,
@@ -1303,6 +1428,9 @@ def analyze_club_detection(
                     "shaftLine": shaft_line,
                     "candidateCount": len(
                         candidates
+                    ),
+                    "candidateDiagnostics": (
+                        candidate_diagnostics
                     ),
                     "failureReason": None,
                     "debugImagePath": str(
@@ -1415,6 +1543,13 @@ def analyze_club_detection(
                 "smallest undirected shaft-angle change. "
                 "Large changes are retained and marked "
                 "for review rather than rejected."
+            ),
+            "candidateDiagnostics": (
+                "Each processed search region records edge "
+                "density, raw Hough line count, accepted "
+                "candidate count, and rejection totals for "
+                "invalid coordinates, length, hand distance, "
+                "and grip-endpoint distance."
             ),
             "visualizations": (
                 "Debug images show the selected "

@@ -165,6 +165,82 @@ def draw_text_line(
     )
 
 
+def get_diagnostic_count(
+    diagnostics: Mapping[str, Any],
+    key: str,
+) -> int:
+    value = diagnostics.get(key, 0)
+
+    if isinstance(value, int):
+        return value
+
+    return 0
+
+
+def build_candidate_diagnostic_lines(
+    candidate_diagnostics: Mapping[str, Any] | None,
+) -> list[str]:
+    if candidate_diagnostics is None:
+        return []
+
+    edge_pixels = get_diagnostic_count(
+        candidate_diagnostics,
+        "edgePixelCount",
+    )
+    minimum_line_length = get_diagnostic_count(
+        candidate_diagnostics,
+        "minimumLineLengthPixels",
+    )
+    raw_lines = get_diagnostic_count(
+        candidate_diagnostics,
+        "rawHoughLineCount",
+    )
+    accepted = get_diagnostic_count(
+        candidate_diagnostics,
+        "acceptedCandidateCount",
+    )
+
+    invalid = (
+        get_diagnostic_count(
+            candidate_diagnostics,
+            "rejectedInvalidCoordinates",
+        )
+        + get_diagnostic_count(
+            candidate_diagnostics,
+            "rejectedInvalidFrameDimensions",
+        )
+    )
+    too_short = get_diagnostic_count(
+        candidate_diagnostics,
+        "rejectedTooShort",
+    )
+    too_long = get_diagnostic_count(
+        candidate_diagnostics,
+        "rejectedTooLong",
+    )
+    too_far = get_diagnostic_count(
+        candidate_diagnostics,
+        "rejectedTooFarFromHands",
+    )
+    endpoint_far = get_diagnostic_count(
+        candidate_diagnostics,
+        "rejectedGripEndpointTooFar",
+    )
+
+    return [
+        (
+            f"edges {edge_pixels} | "
+            f"min line {minimum_line_length}px | "
+            f"Hough {raw_lines} | accepted {accepted}"
+        ),
+        (
+            f"rejected invalid {invalid} | "
+            f"short {too_short} | long {too_long} | "
+            f"hands {too_far} | endpoint {endpoint_far}"
+        ),
+    ]
+
+
 def draw_club_detection_visualization(
     frame: np.ndarray,
     *,
@@ -177,6 +253,7 @@ def draw_club_detection_visualization(
     detected: bool,
     failure_reason: str | None,
     search_region: Mapping[str, Any] | None = None,
+    candidate_diagnostics: Mapping[str, Any] | None = None,
 ) -> np.ndarray:
     if frame.size == 0:
         raise ValueError(
@@ -305,12 +382,27 @@ def draw_club_detection_visualization(
         line_number=1,
     )
 
+    next_line_number = 2
+
     if failure_reason:
         draw_text_line(
             annotated_frame,
             failure_reason,
-            line_number=2,
+            line_number=next_line_number,
         )
+        next_line_number += 1
+
+    for diagnostic_line in (
+        build_candidate_diagnostic_lines(
+            candidate_diagnostics
+        )
+    ):
+        draw_text_line(
+            annotated_frame,
+            diagnostic_line,
+            line_number=next_line_number,
+        )
+        next_line_number += 1
 
     return annotated_frame
 
