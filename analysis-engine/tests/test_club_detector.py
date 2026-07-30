@@ -537,7 +537,7 @@ class ClubDetectorTests(
 
         self.assertEqual(
             diagnostics["detectionPass"],
-            "primary",
+            "rectangular_primary",
         )
 
         self.assertFalse(
@@ -620,7 +620,7 @@ class ClubDetectorTests(
 
         self.assertEqual(
             diagnostics["detectionPass"],
-            "fallback",
+            "rectangular_fallback",
         )
 
         self.assertTrue(
@@ -725,7 +725,7 @@ class ClubDetectorTests(
 
         self.assertEqual(
             diagnostics["detectionPass"],
-            "fallback",
+            "rectangular_fallback",
         )
 
         self.assertEqual(

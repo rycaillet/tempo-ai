@@ -23,6 +23,7 @@ from app.club_visualizer import (
 )
 from app.club_search_region import (
     SearchRegion,
+    build_pose_guided_corridor_mask,
     build_pose_guided_search_region,
     crop_frame_to_search_region,
     translate_coordinates_to_full_frame,
@@ -111,6 +112,10 @@ class CandidateDiagnostics(TypedDict):
     croppedFrameEmpty: bool
     edgePixelCount: int
 
+    corridorMaskAvailable: bool
+    corridorMaskPixelCount: int
+    corridorEdgePixelCount: int
+
     detectionPass: str
     fallbackAttempted: bool
 
@@ -122,6 +127,11 @@ class CandidateDiagnostics(TypedDict):
 
     fallbackMinimumLineLengthPixels: int
     fallbackRawHoughLineCount: int
+
+    corridorPrimaryRawHoughLineCount: int
+    corridorFallbackRawHoughLineCount: int
+    rectangularPrimaryRawHoughLineCount: int
+    rectangularFallbackRawHoughLineCount: int
 
     rejectedInvalidCoordinates: int
     rejectedInvalidFrameDimensions: int
@@ -466,6 +476,7 @@ def distance_from_point_to_segment(
         point["y"] - closest_y,
     )
 
+
 def calculate_nearest_endpoint_distance(
     point: PixelPoint,
     start: PixelPoint,
@@ -492,6 +503,10 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
         "croppedFrameEmpty": False,
         "edgePixelCount": 0,
 
+        "corridorMaskAvailable": False,
+        "corridorMaskPixelCount": 0,
+        "corridorEdgePixelCount": 0,
+
         "detectionPass": "none",
         "fallbackAttempted": False,
 
@@ -503,6 +518,11 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
 
         "fallbackMinimumLineLengthPixels": 0,
         "fallbackRawHoughLineCount": 0,
+
+        "corridorPrimaryRawHoughLineCount": 0,
+        "corridorFallbackRawHoughLineCount": 0,
+        "rectangularPrimaryRawHoughLineCount": 0,
+        "rectangularFallbackRawHoughLineCount": 0,
 
         "rejectedInvalidCoordinates": 0,
         "rejectedInvalidFrameDimensions": 0,
@@ -721,6 +741,7 @@ def record_candidate_rejection(
     if key is not None:
         diagnostics[key] += 1
 
+
 def sort_shaft_candidates(
     candidates: Sequence[ShaftCandidate],
 ) -> list[ShaftCandidate]:
@@ -800,13 +821,25 @@ def run_hough_candidate_pass(
 
     return sort_shaft_candidates(candidates)
 
+
 def detect_shaft_candidates(
     frame: np.ndarray,
     *,
     hand_anchor: PixelPoint,
     search_region: SearchRegion,
+    corridor_mask: np.ndarray | None = None,
     diagnostics: CandidateDiagnostics | None = None,
 ) -> list[ShaftCandidate]:
+    """
+    Generate shaft candidates using geometry-guided and broad passes.
+
+    When a valid directional corridor is available, Hough detection
+    first searches only edges inside that corridor. The broader
+    rectangular pose-guided crop remains a fallback because forearm
+    direction and shaft direction can diverge during wrist hinge,
+    transition, impact, and release.
+    """
+
     frame_height, frame_width = frame.shape[:2]
 
     active_diagnostics = (
@@ -877,81 +910,264 @@ def detect_shaft_candidates(
         "fallbackMinimumLineLengthPixels"
     ] = fallback_minimum_line_length
 
-    primary_candidates = run_hough_candidate_pass(
-        edges,
-        hand_anchor=hand_anchor,
-        search_region=search_region,
-        frame_width=frame_width,
-        frame_height=frame_height,
-        minimum_line_length_pixels=(
-            primary_minimum_line_length
-        ),
-        minimum_candidate_length_ratio=(
-            PRIMARY_MINIMUM_LINE_LENGTH_RATIO
-        ),
-        hough_threshold=(
-            PRIMARY_HOUGH_THRESHOLD
-        ),
-        diagnostics=active_diagnostics,
-        raw_count_key=(
-            "primaryRawHoughLineCount"
-        ),
+    valid_corridor_mask = (
+        corridor_mask is not None
+        and corridor_mask.shape == edges.shape
+        and corridor_mask.dtype == np.uint8
+        and bool(np.any(corridor_mask))
+    )
+
+    if valid_corridor_mask:
+        assert corridor_mask is not None
+
+        active_diagnostics[
+            "corridorMaskAvailable"
+        ] = True
+
+        active_diagnostics[
+            "corridorMaskPixelCount"
+        ] = int(np.count_nonzero(corridor_mask))
+
+        corridor_edges = cv2.bitwise_and(
+            edges,
+            edges,
+            mask=corridor_mask,
+        )
+
+        active_diagnostics[
+            "corridorEdgePixelCount"
+        ] = int(np.count_nonzero(corridor_edges))
+
+        corridor_primary_candidates = (
+            run_hough_candidate_pass(
+                corridor_edges,
+                hand_anchor=hand_anchor,
+                search_region=search_region,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                minimum_line_length_pixels=(
+                    primary_minimum_line_length
+                ),
+                minimum_candidate_length_ratio=(
+                    PRIMARY_MINIMUM_LINE_LENGTH_RATIO
+                ),
+                hough_threshold=(
+                    PRIMARY_HOUGH_THRESHOLD
+                ),
+                diagnostics=active_diagnostics,
+                raw_count_key=(
+                    "corridorPrimaryRawHoughLineCount"
+                ),
+            )
+        )
+
+        if corridor_primary_candidates:
+            active_diagnostics[
+                "detectionPass"
+            ] = "corridor_primary"
+
+            active_diagnostics[
+                "minimumLineLengthPixels"
+            ] = primary_minimum_line_length
+
+            active_diagnostics[
+                "primaryRawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorPrimaryRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "rawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorPrimaryRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "acceptedCandidateCount"
+            ] = len(corridor_primary_candidates)
+
+            return corridor_primary_candidates
+
+        active_diagnostics[
+            "fallbackAttempted"
+        ] = True
+
+        corridor_fallback_candidates = (
+            run_hough_candidate_pass(
+                corridor_edges,
+                hand_anchor=hand_anchor,
+                search_region=search_region,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                minimum_line_length_pixels=(
+                    fallback_minimum_line_length
+                ),
+                minimum_candidate_length_ratio=(
+                    FALLBACK_MINIMUM_LINE_LENGTH_RATIO
+                ),
+                hough_threshold=(
+                    FALLBACK_HOUGH_THRESHOLD
+                ),
+                diagnostics=active_diagnostics,
+                raw_count_key=(
+                    "corridorFallbackRawHoughLineCount"
+                ),
+            )
+        )
+
+        if corridor_fallback_candidates:
+            active_diagnostics[
+                "detectionPass"
+            ] = "corridor_fallback"
+
+            active_diagnostics[
+                "minimumLineLengthPixels"
+            ] = fallback_minimum_line_length
+
+            active_diagnostics[
+                "primaryRawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorPrimaryRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "fallbackRawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorFallbackRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "rawHoughLineCount"
+            ] = (
+                active_diagnostics[
+                    "corridorPrimaryRawHoughLineCount"
+                ]
+                + active_diagnostics[
+                    "corridorFallbackRawHoughLineCount"
+                ]
+            )
+
+            active_diagnostics[
+                "acceptedCandidateCount"
+            ] = len(corridor_fallback_candidates)
+
+            return corridor_fallback_candidates
+
+    rectangular_primary_candidates = (
+        run_hough_candidate_pass(
+            edges,
+            hand_anchor=hand_anchor,
+            search_region=search_region,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            minimum_line_length_pixels=(
+                primary_minimum_line_length
+            ),
+            minimum_candidate_length_ratio=(
+                PRIMARY_MINIMUM_LINE_LENGTH_RATIO
+            ),
+            hough_threshold=(
+                PRIMARY_HOUGH_THRESHOLD
+            ),
+            diagnostics=active_diagnostics,
+            raw_count_key=(
+                "rectangularPrimaryRawHoughLineCount"
+            ),
+        )
     )
 
     active_diagnostics[
-        "rawHoughLineCount"
-    ] = active_diagnostics[
         "primaryRawHoughLineCount"
-    ]
+    ] = (
+        active_diagnostics[
+            "corridorPrimaryRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "rectangularPrimaryRawHoughLineCount"
+        ]
+    )
 
-    if primary_candidates:
+    if rectangular_primary_candidates:
         active_diagnostics[
             "detectionPass"
-        ] = "primary"
+        ] = "rectangular_primary"
 
         active_diagnostics[
             "minimumLineLengthPixels"
         ] = primary_minimum_line_length
 
         active_diagnostics[
-            "acceptedCandidateCount"
-        ] = len(primary_candidates)
+            "rawHoughLineCount"
+        ] = (
+            active_diagnostics[
+                "corridorPrimaryRawHoughLineCount"
+            ]
+            + active_diagnostics[
+                "corridorFallbackRawHoughLineCount"
+            ]
+            + active_diagnostics[
+                "rectangularPrimaryRawHoughLineCount"
+            ]
+        )
 
-        return primary_candidates
+        active_diagnostics[
+            "acceptedCandidateCount"
+        ] = len(rectangular_primary_candidates)
+
+        return rectangular_primary_candidates
 
     active_diagnostics[
         "fallbackAttempted"
     ] = True
 
-    fallback_candidates = run_hough_candidate_pass(
-        edges,
-        hand_anchor=hand_anchor,
-        search_region=search_region,
-        frame_width=frame_width,
-        frame_height=frame_height,
-        minimum_line_length_pixels=(
-            fallback_minimum_line_length
-        ),
-        minimum_candidate_length_ratio=(
-            FALLBACK_MINIMUM_LINE_LENGTH_RATIO
-        ),
-        hough_threshold=(
-            FALLBACK_HOUGH_THRESHOLD
-        ),
-        diagnostics=active_diagnostics,
-        raw_count_key=(
-            "fallbackRawHoughLineCount"
-        ),
+    rectangular_fallback_candidates = (
+        run_hough_candidate_pass(
+            edges,
+            hand_anchor=hand_anchor,
+            search_region=search_region,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            minimum_line_length_pixels=(
+                fallback_minimum_line_length
+            ),
+            minimum_candidate_length_ratio=(
+                FALLBACK_MINIMUM_LINE_LENGTH_RATIO
+            ),
+            hough_threshold=(
+                FALLBACK_HOUGH_THRESHOLD
+            ),
+            diagnostics=active_diagnostics,
+            raw_count_key=(
+                "rectangularFallbackRawHoughLineCount"
+            ),
+        )
+    )
+
+    active_diagnostics[
+        "fallbackRawHoughLineCount"
+    ] = (
+        active_diagnostics[
+            "corridorFallbackRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "rectangularFallbackRawHoughLineCount"
+        ]
     )
 
     active_diagnostics[
         "rawHoughLineCount"
     ] = (
         active_diagnostics[
-            "primaryRawHoughLineCount"
+            "corridorPrimaryRawHoughLineCount"
         ]
         + active_diagnostics[
-            "fallbackRawHoughLineCount"
+            "corridorFallbackRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "rectangularPrimaryRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "rectangularFallbackRawHoughLineCount"
         ]
     )
 
@@ -959,16 +1175,16 @@ def detect_shaft_candidates(
         "minimumLineLengthPixels"
     ] = fallback_minimum_line_length
 
-    if fallback_candidates:
+    if rectangular_fallback_candidates:
         active_diagnostics[
             "detectionPass"
-        ] = "fallback"
+        ] = "rectangular_fallback"
 
         active_diagnostics[
             "acceptedCandidateCount"
-        ] = len(fallback_candidates)
+        ] = len(rectangular_fallback_candidates)
 
-        return fallback_candidates
+        return rectangular_fallback_candidates
 
     active_diagnostics[
         "detectionPass"
@@ -1059,14 +1275,6 @@ def calculate_axial_angle_change(
     first_angle: float,
     second_angle: float,
 ) -> float:
-    """
-    Return the smallest difference between two undirected line
-    angles.
-
-    Shaft lines are axes rather than directional vectors, so angles
-    separated by 180 degrees describe the same physical line.
-    """
-
     difference = abs(
         second_angle - first_angle
     ) % 180.0
@@ -1081,14 +1289,6 @@ def get_grip_and_distal_endpoints(
     shaft_line: ShaftLine,
     hand_anchor: PixelPoint,
 ) -> tuple[PixelPoint, PixelPoint]:
-    """
-    Orient an undirected shaft line relative to the golfer's hands.
-
-    The endpoint nearest the hand anchor is treated as the grip-side
-    endpoint. The other endpoint is treated as the distal club-side
-    endpoint.
-    """
-
     start = shaft_line["start"]
     end = shaft_line["end"]
 
@@ -1117,14 +1317,6 @@ def calculate_temporal_candidate_evaluation(
     frame_width: int,
     frame_height: int,
 ) -> TemporalCandidateEvaluation:
-    """
-    Compare one current candidate with the previous trusted shaft line.
-
-    Image evidence remains the largest component of the score. Temporal
-    angle and distal-endpoint continuity help distinguish the shaft from
-    nearby body, clothing, and background edges.
-    """
-
     diagonal = math.hypot(
         frame_width,
         frame_height,
@@ -1229,8 +1421,6 @@ def build_candidate_evaluation_diagnostics(
     accepted: bool,
     selected: bool,
 ) -> CandidateEvaluationDiagnostics:
-    """Build one JSON-serializable candidate diagnostic record."""
-
     rejection_reasons: list[str] = []
 
     if not accepted:
@@ -1282,15 +1472,6 @@ def select_shaft_candidate(
     frame_height: int,
     diagnostics: CandidateDiagnostics,
 ) -> ShaftCandidate | None:
-    """
-    Select the strongest believable shaft candidate.
-
-    The first usable frame relies on image evidence alone. Later frames
-    combine image evidence with temporal continuity. Every candidate is
-    retained in diagnostics so rejected and selected hypotheses can be
-    inspected without changing detector behavior.
-    """
-
     diagnostics["candidateEvaluations"] = []
 
     if not candidates:
@@ -1459,18 +1640,10 @@ def select_shaft_candidate(
 
     return selected_candidate
 
+
 def apply_temporal_consistency_validation(
     frame_results: list[ClubFrameDetection],
 ) -> None:
-    """
-    Compare successful club detections in chronological order.
-
-    Dense neighboring frames normally produce gradual shaft-angle
-    changes. Large changes are retained and marked for review rather
-    than rejected or replaced so downstream tracking can inspect the
-    original detection evidence.
-    """
-
     previous_detection: ClubFrameDetection | None = None
 
     for frame_result in frame_results:
@@ -1715,9 +1888,7 @@ def analyze_club_detection(
                         "referenceFrameIndex": (
                             reference_frame_index
                         ),
-                        "frameIndex": (
-                            frame_index
-                        ),
+                        "frameIndex": frame_index,
                         "phaseOffsetFrames": (
                             phase_offset_frames
                         ),
@@ -1737,6 +1908,8 @@ def analyze_club_detection(
                             "club-tracking frame."
                         ),
                         "debugImagePath": None,
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
                 continue
@@ -1754,16 +1927,10 @@ def analyze_club_detection(
                 else None
             )
 
-            hand_anchor = (
-                calculate_hand_anchor(
-                    pose_frame,
-                    frame_width=(
-                        rotated_width
-                    ),
-                    frame_height=(
-                        rotated_height
-                    ),
-                )
+            hand_anchor = calculate_hand_anchor(
+                pose_frame,
+                frame_width=rotated_width,
+                frame_height=rotated_height,
             )
 
             if hand_anchor is None:
@@ -1773,9 +1940,7 @@ def analyze_club_detection(
                         "referenceFrameIndex": (
                             reference_frame_index
                         ),
-                        "frameIndex": (
-                            frame_index
-                        ),
+                        "frameIndex": frame_index,
                         "phaseOffsetFrames": (
                             phase_offset_frames
                         ),
@@ -1797,6 +1962,8 @@ def analyze_club_detection(
                             "available."
                         ),
                         "debugImagePath": None,
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
                 continue
@@ -1813,9 +1980,7 @@ def analyze_club_detection(
                         "referenceFrameIndex": (
                             reference_frame_index
                         ),
-                        "frameIndex": (
-                            frame_index
-                        ),
+                        "frameIndex": frame_index,
                         "phaseOffsetFrames": (
                             phase_offset_frames
                         ),
@@ -1836,6 +2001,8 @@ def analyze_club_detection(
                             "video frame could not be read."
                         ),
                         "debugImagePath": None,
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
                 continue
@@ -1854,6 +2021,18 @@ def analyze_club_detection(
                 )
             )
 
+            corridor_mask = (
+                build_pose_guided_corridor_mask(
+                    pose_frame,
+                    search_region=search_region,
+                    hand_anchor=hand_anchor,
+                    frame_width=rotated_width,
+                    frame_height=rotated_height,
+                )
+                if search_region is not None
+                else None
+            )
+
             candidate_diagnostics = (
                 create_candidate_diagnostics()
                 if search_region is not None
@@ -1865,6 +2044,7 @@ def analyze_club_detection(
                     rotated_frame,
                     hand_anchor=hand_anchor,
                     search_region=search_region,
+                    corridor_mask=corridor_mask,
                     diagnostics=(
                         candidate_diagnostics
                     ),
@@ -1894,7 +2074,8 @@ def analyze_club_detection(
                     else (
                         "No reliable shaft-line "
                         "candidate was found inside "
-                        "the pose-guided search region."
+                        "the geometry-guided corridor "
+                        "or rectangular fallback region."
                     )
                 )
 
@@ -1904,7 +2085,7 @@ def analyze_club_detection(
                         phase_name=phase_name,
                         frame_index=frame_index,
                         hand_anchor=hand_anchor,
-                        search_region=search_region,                       
+                        search_region=search_region,
                         shaft_line=None,
                         confidence=0.0,
                         candidate_count=0,
@@ -1929,9 +2110,7 @@ def analyze_club_detection(
                         "referenceFrameIndex": (
                             reference_frame_index
                         ),
-                        "frameIndex": (
-                            frame_index
-                        ),
+                        "frameIndex": frame_index,
                         "phaseOffsetFrames": (
                             phase_offset_frames
                         ),
@@ -1949,16 +2128,18 @@ def analyze_club_detection(
                         "candidateDiagnostics": (
                             candidate_diagnostics
                         ),
-                        "failureReason": (
-                            failure_reason
-                        ),
+                        "failureReason": failure_reason,
                         "debugImagePath": str(
                             debug_image_path
                         ),
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
 
                 continue
+
+            assert candidate_diagnostics is not None
 
             best_candidate = select_shaft_candidate(
                 candidates,
@@ -1991,9 +2172,7 @@ def analyze_club_detection(
                         search_region=search_region,
                         shaft_line=None,
                         confidence=0.0,
-                        candidate_count=len(
-                            candidates
-                        ),
+                        candidate_count=len(candidates),
                         candidate_diagnostics=(
                             candidate_diagnostics
                         ),
@@ -2038,18 +2217,16 @@ def analyze_club_detection(
                             ),
                         },
                         "shaftLine": None,
-                        "candidateCount": len(
-                            candidates
-                        ),
+                        "candidateCount": len(candidates),
                         "candidateDiagnostics": (
                             candidate_diagnostics
                         ),
-                        "failureReason": (
-                            failure_reason
-                        ),
+                        "failureReason": failure_reason,
                         "debugImagePath": str(
                             debug_image_path
                         ),
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
 
@@ -2071,9 +2248,7 @@ def analyze_club_detection(
 
             shaft_line = best_candidate["line"]
 
-            previous_trusted_shaft_line = (
-                shaft_line
-            )
+            previous_trusted_shaft_line = shaft_line
 
             previous_trusted_hand_anchor = {
                 "x": hand_anchor["x"],
@@ -2089,9 +2264,7 @@ def analyze_club_detection(
                     search_region=search_region,
                     shaft_line=shaft_line,
                     confidence=confidence,
-                    candidate_count=len(
-                        candidates
-                    ),
+                    candidate_count=len(candidates),
                     candidate_diagnostics=(
                         candidate_diagnostics
                     ),
@@ -2134,9 +2307,7 @@ def analyze_club_detection(
                         ),
                     },
                     "shaftLine": shaft_line,
-                    "candidateCount": len(
-                        candidates
-                    ),
+                    "candidateCount": len(candidates),
                     "candidateDiagnostics": (
                         candidate_diagnostics
                     ),
@@ -2144,6 +2315,8 @@ def analyze_club_detection(
                     "debugImagePath": str(
                         debug_image_path
                     ),
+                    "temporalStatus": "pending",
+                    "temporalComparison": None,
                 }
             )
     finally:
@@ -2230,12 +2403,13 @@ def analyze_club_detection(
             ),
             "candidateSearch": (
                 "Canny edge detection and a dual-pass "
-                "probabilistic Hough transform run "
-                "inside an adaptive pose-guided region. "
-                "The primary pass searches for strong "
-                "continuous shaft lines. A shorter-line "
-                "fallback runs only when the primary pass "
-                "produces no accepted candidates."
+                "probabilistic Hough transform first run "
+                "inside a rotated geometry-guided corridor "
+                "estimated from the golfer's forearms and "
+                "hands. If the focused corridor produces no "
+                "accepted candidates, the same primary and "
+                "short-line fallback passes run across the "
+                "broader pose-guided rectangular region."
             ),
             "referenceFrameSource": (
                 "golf-phase-refiner"
@@ -2255,11 +2429,13 @@ def analyze_club_detection(
                 "for review rather than rejected."
             ),
             "candidateDiagnostics": (
-                "Each processed search region records edge "
-                "density, raw Hough line count, accepted "
-                "candidate count, image-filter rejection totals, "
-                "and a serializable record for every candidate "
-                "evaluated during image-only or temporal selection."
+                "Each processed search region records full "
+                "and corridor edge density, per-pass raw "
+                "Hough line counts, accepted candidate "
+                "count, image-filter rejection totals, and "
+                "a serializable record for every candidate "
+                "evaluated during image-only or temporal "
+                "selection."
             ),
             "visualizations": (
                 "Debug images show the selected "
@@ -2273,6 +2449,13 @@ def analyze_club_detection(
                     "Line detection does not "
                     "identify the club model or "
                     "club type."
+                ),
+                (
+                    "Forearm direction is only an estimate "
+                    "of shaft direction. Wrist hinge and "
+                    "release can cause the shaft to diverge "
+                    "from the focused corridor, so a broader "
+                    "rectangular fallback remains necessary."
                 ),
                 (
                     "Body edges, clothing, shadows, "
@@ -2298,12 +2481,8 @@ def analyze_club_detection(
             "requestedFrames": len(
                 frame_requests
             ),
-            "processedFrames": (
-                processed_count
-            ),
-            "detectedFrames": (
-                detected_count
-            ),
+            "processedFrames": processed_count,
+            "detectedFrames": detected_count,
             "undetectedFrames": (
                 processed_count
                 - detected_count
@@ -2321,9 +2500,7 @@ def analyze_club_detection(
                 average_confidence,
                 3,
             ),
-            "selectedRotation": (
-                selected_rotation
-            ),
+            "selectedRotation": selected_rotation,
             "visualizationCount": len(
                 visualized_results
             ),
