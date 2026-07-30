@@ -95,6 +95,18 @@ class ShaftCandidate(TypedDict):
     score: float
 
 
+class CandidateEvaluationDiagnostics(TypedDict):
+    index: int
+    line: ShaftLine
+    imageScore: float
+    temporalScore: float | None
+    angleChangeDegrees: float | None
+    distalShiftRatio: float | None
+    accepted: bool
+    selected: bool
+    rejectionReasons: list[str]
+
+
 class CandidateDiagnostics(TypedDict):
     croppedFrameEmpty: bool
     edgePixelCount: int
@@ -126,6 +138,7 @@ class CandidateDiagnostics(TypedDict):
     selectedTemporalScore: float | None
     selectedAngleChangeDegrees: float | None
     selectedDistalShiftRatio: float | None
+    candidateEvaluations: list[CandidateEvaluationDiagnostics]
 
 
 class TemporalCandidateEvaluation(TypedDict):
@@ -506,6 +519,7 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
         "selectedTemporalScore": None,
         "selectedAngleChangeDegrees": None,
         "selectedDistalShiftRatio": None,
+        "candidateEvaluations": [],
     }
 
 
@@ -1205,6 +1219,59 @@ def calculate_temporal_candidate_evaluation(
     }
 
 
+def build_candidate_evaluation_diagnostics(
+    candidate: ShaftCandidate,
+    *,
+    index: int,
+    temporal_score: float | None,
+    angle_change_degrees: float | None,
+    distal_shift_ratio: float | None,
+    accepted: bool,
+    selected: bool,
+) -> CandidateEvaluationDiagnostics:
+    """Build one JSON-serializable candidate diagnostic record."""
+
+    rejection_reasons: list[str] = []
+
+    if not accepted:
+        if (
+            angle_change_degrees is not None
+            and angle_change_degrees
+            > MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES
+        ):
+            rejection_reasons.append(
+                "angle_change_exceeds_threshold"
+            )
+
+        if (
+            temporal_score is not None
+            and temporal_score
+            < MINIMUM_TEMPORAL_SELECTION_SCORE
+        ):
+            rejection_reasons.append(
+                "temporal_score_below_minimum"
+            )
+
+        if not rejection_reasons:
+            rejection_reasons.append(
+                "temporal_candidate_rejected"
+            )
+
+    return {
+        "index": index,
+        "line": candidate["line"],
+        "imageScore": candidate["score"],
+        "temporalScore": temporal_score,
+        "angleChangeDegrees": (
+            angle_change_degrees
+        ),
+        "distalShiftRatio": distal_shift_ratio,
+        "accepted": accepted,
+        "selected": selected,
+        "rejectionReasons": rejection_reasons,
+    }
+
+
 def select_shaft_candidate(
     candidates: Sequence[ShaftCandidate],
     *,
@@ -1219,10 +1286,12 @@ def select_shaft_candidate(
     Select the strongest believable shaft candidate.
 
     The first usable frame relies on image evidence alone. Later frames
-    combine image evidence with temporal continuity. When every current
-    candidate is implausible relative to the previous trusted detection,
-    the frame remains explicitly undetected.
+    combine image evidence with temporal continuity. Every candidate is
+    retained in diagnostics so rejected and selected hypotheses can be
+    inspected without changing detector behavior.
     """
+
+    diagnostics["candidateEvaluations"] = []
 
     if not candidates:
         diagnostics[
@@ -1244,6 +1313,19 @@ def select_shaft_candidate(
         diagnostics[
             "selectedTemporalScore"
         ] = selected["score"]
+
+        diagnostics["candidateEvaluations"] = [
+            build_candidate_evaluation_diagnostics(
+                candidate,
+                index=index,
+                temporal_score=None,
+                angle_change_degrees=None,
+                distal_shift_ratio=None,
+                accepted=True,
+                selected=(candidate is selected),
+            )
+            for index, candidate in enumerate(candidates)
+        ]
 
         return selected
 
@@ -1291,6 +1373,25 @@ def select_shaft_candidate(
             "temporalSelectionMode"
         ] = "rejected"
 
+        diagnostics["candidateEvaluations"] = [
+            build_candidate_evaluation_diagnostics(
+                evaluation["candidate"],
+                index=index,
+                temporal_score=(
+                    evaluation["temporalScore"]
+                ),
+                angle_change_degrees=(
+                    evaluation["angleChangeDegrees"]
+                ),
+                distal_shift_ratio=(
+                    evaluation["distalShiftRatio"]
+                ),
+                accepted=evaluation["accepted"],
+                selected=False,
+            )
+            for index, evaluation in enumerate(evaluations)
+        ]
+
         return None
 
     accepted_evaluations.sort(
@@ -1330,8 +1431,33 @@ def select_shaft_candidate(
         "distalShiftRatio"
     ]
 
-    return selected_evaluation["candidate"]
+    selected_candidate = selected_evaluation[
+        "candidate"
+    ]
 
+    diagnostics["candidateEvaluations"] = [
+        build_candidate_evaluation_diagnostics(
+            evaluation["candidate"],
+            index=index,
+            temporal_score=(
+                evaluation["temporalScore"]
+            ),
+            angle_change_degrees=(
+                evaluation["angleChangeDegrees"]
+            ),
+            distal_shift_ratio=(
+                evaluation["distalShiftRatio"]
+            ),
+            accepted=evaluation["accepted"],
+            selected=(
+                evaluation["candidate"]
+                is selected_candidate
+            ),
+        )
+        for index, evaluation in enumerate(evaluations)
+    ]
+
+    return selected_candidate
 
 def apply_temporal_consistency_validation(
     frame_results: list[ClubFrameDetection],
@@ -2129,12 +2255,11 @@ def analyze_club_detection(
                 "for review rather than rejected."
             ),
             "candidateDiagnostics": (
-                "Each processed search region records "
-                "edge density, primary and fallback Hough "
-                "counts, the selected detection pass, "
-                "accepted candidate count, and rejection "
-                "totals for invalid coordinates, length, "
-                "hand distance, and grip-endpoint distance."
+                "Each processed search region records edge "
+                "density, raw Hough line count, accepted "
+                "candidate count, image-filter rejection totals, "
+                "and a serializable record for every candidate "
+                "evaluated during image-only or temporal selection."
             ),
             "visualizations": (
                 "Debug images show the selected "

@@ -10,6 +10,7 @@ import numpy as np
 from app.club_detector import (
     ClubFrameDetection,
     apply_temporal_consistency_validation,
+    build_candidate_evaluation_diagnostics,
     build_shaft_candidate,
     calculate_axial_angle_change,
     calculate_hand_anchor,
@@ -1101,6 +1102,18 @@ class ClubDetectorTests(
             2,
         )
 
+        candidate_records = diagnostics[
+            "candidateEvaluations"
+        ]
+
+        self.assertEqual(len(candidate_records), 2)
+        self.assertFalse(candidate_records[0]["selected"])
+        self.assertTrue(candidate_records[0]["accepted"])
+        self.assertTrue(candidate_records[1]["selected"])
+        self.assertTrue(candidate_records[1]["accepted"])
+        self.assertEqual(candidate_records[0]["index"], 0)
+        self.assertEqual(candidate_records[1]["index"], 1)
+
     def test_temporal_selection_rejects_all_implausible_candidates(
         self,
     ) -> None:
@@ -1160,6 +1173,18 @@ class ClubDetectorTests(
             1,
         )
 
+        candidate_records = diagnostics[
+            "candidateEvaluations"
+        ]
+
+        self.assertEqual(len(candidate_records), 1)
+        self.assertFalse(candidate_records[0]["accepted"])
+        self.assertFalse(candidate_records[0]["selected"])
+        self.assertIn(
+            "angle_change_exceeds_threshold",
+            candidate_records[0]["rejectionReasons"],
+        )
+
     def test_first_temporal_selection_uses_image_score(
         self,
     ) -> None:
@@ -1215,6 +1240,56 @@ class ClubDetectorTests(
         self.assertEqual(
             diagnostics["selectedTemporalScore"],
             0.85,
+        )
+
+        candidate_records = diagnostics[
+            "candidateEvaluations"
+        ]
+
+        self.assertEqual(len(candidate_records), 2)
+        self.assertTrue(candidate_records[0]["selected"])
+        self.assertTrue(candidate_records[0]["accepted"])
+        self.assertIsNone(
+            candidate_records[0]["temporalScore"]
+        )
+        self.assertFalse(candidate_records[1]["selected"])
+        self.assertEqual(
+            candidate_records[1]["rejectionReasons"],
+            [],
+        )
+
+    def test_candidate_diagnostic_builder_records_score_rejection(
+        self,
+    ) -> None:
+        hand_anchor = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=500,
+            end_y=300,
+            hand_anchor=hand_anchor,
+        )
+
+        record = build_candidate_evaluation_diagnostics(
+            candidate,
+            index=3,
+            temporal_score=0.40,
+            angle_change_degrees=20.0,
+            distal_shift_ratio=0.12,
+            accepted=False,
+            selected=False,
+        )
+
+        self.assertEqual(record["index"], 3)
+        self.assertEqual(record["line"], candidate["line"])
+        self.assertEqual(record["imageScore"], candidate["score"])
+        self.assertEqual(
+            record["rejectionReasons"],
+            ["temporal_score_below_minimum"],
         )
 
 

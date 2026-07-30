@@ -14,6 +14,9 @@ TEXT_THICKNESS = 1
 LINE_THICKNESS = 4
 ANCHOR_RADIUS = 7
 SEARCH_REGION_THICKNESS = 2
+CANDIDATE_LINE_THICKNESS = 2
+CANDIDATE_LABEL_SCALE = 0.45
+CANDIDATE_LABEL_THICKNESS = 1
 
 
 def create_club_visualization_directory(
@@ -343,6 +346,12 @@ def build_candidate_diagnostic_lines(
         else "n/a"
     )
 
+    candidate_evaluation_count = len(
+        get_candidate_evaluations(
+            candidate_diagnostics
+        )
+    )
+
     return [
         (
             f"edges {edge_pixels} | "
@@ -371,7 +380,135 @@ def build_candidate_diagnostic_lines(
             f"angle {angle_change_label} | "
             f"distal {distal_shift_label}"
         ),
+        (
+            f"candidate records {candidate_evaluation_count} | "
+            "green selected | orange accepted | red rejected"
+        ),
     ]
+
+
+def get_candidate_evaluations(
+    candidate_diagnostics: Mapping[str, Any] | None,
+) -> list[Mapping[str, Any]]:
+    if candidate_diagnostics is None:
+        return []
+
+    value = candidate_diagnostics.get(
+        "candidateEvaluations"
+    )
+
+    if not isinstance(value, list):
+        return []
+
+    return [
+        item
+        for item in value
+        if isinstance(item, Mapping)
+    ]
+
+
+def draw_candidate_evaluations(
+    image: np.ndarray,
+    candidate_diagnostics: Mapping[str, Any] | None,
+) -> None:
+    """Draw every evaluated candidate without recomputing detector data."""
+
+    for evaluation in get_candidate_evaluations(
+        candidate_diagnostics
+    ):
+        line = evaluation.get("line")
+
+        if not isinstance(line, Mapping):
+            continue
+
+        start_value = line.get("start")
+        end_value = line.get("end")
+
+        if not (
+            isinstance(start_value, Mapping)
+            and isinstance(end_value, Mapping)
+        ):
+            continue
+
+        start_point = point_to_integer_tuple(
+            start_value
+        )
+        end_point = point_to_integer_tuple(
+            end_value
+        )
+
+        if (
+            start_point is None
+            or end_point is None
+        ):
+            continue
+
+        selected = evaluation.get("selected") is True
+        accepted = evaluation.get("accepted") is True
+
+        if selected:
+            line_color = (0, 255, 0)
+            thickness = LINE_THICKNESS
+        elif accepted:
+            line_color = (0, 165, 255)
+            thickness = CANDIDATE_LINE_THICKNESS
+        else:
+            line_color = (0, 0, 255)
+            thickness = CANDIDATE_LINE_THICKNESS
+
+        cv2.line(
+            image,
+            start_point,
+            end_point,
+            line_color,
+            thickness=thickness,
+            lineType=cv2.LINE_AA,
+        )
+
+        index_value = evaluation.get("index")
+        index_label = (
+            str(index_value)
+            if isinstance(index_value, int)
+            else "?"
+        )
+
+        image_score = get_diagnostic_float(
+            evaluation,
+            "imageScore",
+        )
+        temporal_score = get_diagnostic_float(
+            evaluation,
+            "temporalScore",
+        )
+
+        score_value = (
+            temporal_score
+            if temporal_score is not None
+            else image_score
+        )
+
+        score_label = (
+            f" {score_value:.2f}"
+            if score_value is not None
+            else ""
+        )
+
+        label = f"C{index_label}{score_label}"
+        midpoint = (
+            int(round((start_point[0] + end_point[0]) / 2)),
+            int(round((start_point[1] + end_point[1]) / 2)),
+        )
+
+        cv2.putText(
+            image,
+            label,
+            midpoint,
+            TEXT_FONT,
+            CANDIDATE_LABEL_SCALE,
+            line_color,
+            CANDIDATE_LABEL_THICKNESS,
+            cv2.LINE_AA,
+        )
 
 
 def draw_club_detection_visualization(
@@ -439,7 +576,19 @@ def draw_club_detection_visualization(
                 lineType=cv2.LINE_AA,
             )
 
-    if shaft_line is not None:
+    candidate_evaluations = get_candidate_evaluations(
+        candidate_diagnostics
+    )
+
+    draw_candidate_evaluations(
+        annotated_frame,
+        candidate_diagnostics,
+    )
+
+    if (
+        shaft_line is not None
+        and not candidate_evaluations
+    ):
         start_value = shaft_line.get("start")
         end_value = shaft_line.get("end")
 
