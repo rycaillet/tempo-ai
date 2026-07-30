@@ -49,6 +49,8 @@ CANNY_HIGH_THRESHOLD = 150
 HOUGH_THRESHOLD = 24
 HOUGH_MAX_LINE_GAP = 18
 
+MAXIMUM_REFERENCE_ANGLE_CHANGE_DEGREES = 75.0
+
 
 class PixelPoint(TypedDict):
     x: float
@@ -72,6 +74,13 @@ class ShaftCandidate(TypedDict):
     score: float
 
 
+class TemporalComparison(TypedDict):
+    previousPhase: str
+    previousFrameIndex: int
+    angleChangeDegrees: float
+    withinThreshold: bool
+
+
 class ClubFrameDetection(TypedDict):
     phase: str
     frameIndex: int
@@ -83,6 +92,8 @@ class ClubFrameDetection(TypedDict):
     candidateCount: int
     failureReason: str | None
     debugImagePath: str | None
+    temporalStatus: str
+    temporalComparison: TemporalComparison | None
 
 
 class ClubDetectionSummary(TypedDict):
@@ -94,6 +105,10 @@ class ClubDetectionSummary(TypedDict):
     averageConfidence: float
     selectedRotation: str
     visualizationCount: int
+    temporalComparisonCount: int
+    temporallyConsistentFrames: int
+    temporalReviewFrames: int
+    maximumAngleChangeDegrees: float | None
 
 
 class ClubDetectionResult(TypedDict):
@@ -726,6 +741,97 @@ def get_reference_phases(
     return references
 
 
+def calculate_axial_angle_change(
+    first_angle: float,
+    second_angle: float,
+) -> float:
+    """
+    Return the smallest difference between two undirected line
+    angles.
+
+    Shaft lines are axes rather than directional vectors, so angles
+    separated by 180 degrees describe the same physical line.
+    """
+
+    difference = abs(
+        second_angle - first_angle
+    ) % 180.0
+
+    if difference > 90.0:
+        difference = 180.0 - difference
+
+    return difference
+
+
+def apply_temporal_consistency_validation(
+    frame_results: list[ClubFrameDetection],
+) -> None:
+    """
+    Compare successful detections in chronological order.
+
+    Sparse reference phases can contain substantial real club
+    rotation. Large changes are therefore retained and marked for
+    review rather than rejected or replaced.
+    """
+
+    previous_detection: ClubFrameDetection | None = None
+
+    for frame_result in frame_results:
+        frame_result["temporalComparison"] = None
+
+        if not frame_result["detected"]:
+            frame_result["temporalStatus"] = "unavailable"
+            continue
+
+        shaft_line = frame_result["shaftLine"]
+
+        if shaft_line is None:
+            frame_result["temporalStatus"] = "unavailable"
+            continue
+
+        if previous_detection is None:
+            frame_result["temporalStatus"] = "not_compared"
+            previous_detection = frame_result
+            continue
+
+        previous_shaft_line = previous_detection["shaftLine"]
+
+        if previous_shaft_line is None:
+            frame_result["temporalStatus"] = "not_compared"
+            previous_detection = frame_result
+            continue
+
+        angle_change = calculate_axial_angle_change(
+            previous_shaft_line["angleDegrees"],
+            shaft_line["angleDegrees"],
+        )
+
+        within_threshold = (
+            angle_change
+            <= MAXIMUM_REFERENCE_ANGLE_CHANGE_DEGREES
+        )
+
+        frame_result["temporalComparison"] = {
+            "previousPhase": previous_detection["phase"],
+            "previousFrameIndex": previous_detection[
+                "frameIndex"
+            ],
+            "angleChangeDegrees": round(
+                angle_change,
+                3,
+            ),
+            "withinThreshold": within_threshold,
+        }
+
+        frame_result["temporalStatus"] = (
+            "consistent"
+            if within_threshold
+            else "review"
+        )
+
+        previous_detection = frame_result
+
+
 def analyze_club_detection(
     *,
     video_path: Path,
@@ -1123,6 +1229,10 @@ def analyze_club_detection(
     finally:
         video.release()
 
+    apply_temporal_consistency_validation(
+        frame_results
+    )
+
     detected_results = [
         frame
         for frame in frame_results
@@ -1134,6 +1244,37 @@ def analyze_club_detection(
         for frame in frame_results
         if frame["debugImagePath"] is not None
     ]
+
+    temporal_comparisons = [
+        comparison
+        for frame in frame_results
+        if (
+            comparison
+            := frame["temporalComparison"]
+        )
+        is not None
+    ]
+
+    temporally_consistent_results = [
+        frame
+        for frame in frame_results
+        if frame["temporalStatus"] == "consistent"
+    ]
+
+    temporal_review_results = [
+        frame
+        for frame in frame_results
+        if frame["temporalStatus"] == "review"
+    ]
+
+    maximum_angle_change = (
+        max(
+            comparison["angleChangeDegrees"]
+            for comparison in temporal_comparisons
+        )
+        if temporal_comparisons
+        else None
+    )
 
     detected_count = len(
         detected_results
@@ -1177,6 +1318,13 @@ def analyze_club_detection(
             "referenceFrameSource": (
                 "golf-phase-refiner"
             ),
+            "temporalValidation": (
+                "Successful reference-frame detections "
+                "are compared chronologically using the "
+                "smallest undirected shaft-angle change. "
+                "Large changes are retained and marked "
+                "for review rather than rejected."
+            ),
             "visualizations": (
                 "Debug images show the selected "
                 "shaft candidate and detected hand "
@@ -1195,6 +1343,13 @@ def analyze_club_detection(
                     "and background objects can "
                     "produce competing line "
                     "candidates."
+                ),
+                (
+                    "Reference phases may be separated "
+                    "by many video frames, so a temporal "
+                    "review status indicates a large "
+                    "angle change rather than a proven "
+                    "detection error."
                 ),
                 (
                     "A missing detection is retained "
@@ -1235,6 +1390,23 @@ def analyze_club_detection(
             ),
             "visualizationCount": len(
                 visualized_results
+            ),
+            "temporalComparisonCount": len(
+                temporal_comparisons
+            ),
+            "temporallyConsistentFrames": len(
+                temporally_consistent_results
+            ),
+            "temporalReviewFrames": len(
+                temporal_review_results
+            ),
+            "maximumAngleChangeDegrees": (
+                round(
+                    maximum_angle_change,
+                    3,
+                )
+                if maximum_angle_change is not None
+                else None
             ),
         },
         "frames": frame_results,
