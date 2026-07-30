@@ -8,6 +8,9 @@ from typing import Any, Mapping, Sequence, TypedDict
 import cv2
 import numpy as np
 
+from app.club_frame_window import (
+    build_dense_club_frame_requests,
+)
 from app.pose_detector import (
     read_frame_at_index,
     rotate_frame,
@@ -83,7 +86,10 @@ class TemporalComparison(TypedDict):
 
 class ClubFrameDetection(TypedDict):
     phase: str
+    referenceFrameIndex: int
     frameIndex: int
+    phaseOffsetFrames: int
+    isReferenceFrame: bool
     timestampSeconds: float | None
     detected: bool
     confidence: float
@@ -767,11 +773,12 @@ def apply_temporal_consistency_validation(
     frame_results: list[ClubFrameDetection],
 ) -> None:
     """
-    Compare successful detections in chronological order.
+    Compare successful club detections in chronological order.
 
-    Sparse reference phases can contain substantial real club
-    rotation. Large changes are therefore retained and marked for
-    review rather than rejected or replaced.
+    Dense neighboring frames normally produce gradual shaft-angle
+    changes. Large changes are retained and marked for review rather
+    than rejected or replaced so downstream tracking can inspect the
+    original detection evidence.
     """
 
     previous_detection: ClubFrameDetection | None = None
@@ -922,6 +929,24 @@ def analyze_club_detection(
         )
     )
 
+    if not pose_frame_lookup:
+        raise ValueError(
+            "Pose timeline does not contain any "
+            "usable indexed frames."
+        )
+
+    frame_requests = (
+        build_dense_club_frame_requests(
+            reference_phases,
+            minimum_frame_index=min(
+                pose_frame_lookup
+            ),
+            maximum_frame_index=max(
+                pose_frame_lookup
+            ),
+        )
+    )
+
     resolved_visualization_directory = (
         visualization_directory
         if visualization_directory is not None
@@ -956,24 +981,27 @@ def analyze_club_detection(
     ] = []
 
     try:
-        for phase_name, phase in (
-            reference_phases
-        ):
-            frame_index = int(
-                phase["frameIndex"]
+        for frame_request in frame_requests:
+            phase_name = frame_request[
+                "phase"
+            ]
+            reference_frame_index = (
+                frame_request[
+                    "referenceFrameIndex"
+                ]
             )
-
-            timestamp_value = phase.get(
-                "timestampSeconds"
+            frame_index = frame_request[
+                "frameIndex"
+            ]
+            phase_offset_frames = (
+                frame_request[
+                    "phaseOffsetFrames"
+                ]
             )
-
-            timestamp_seconds = (
-                float(timestamp_value)
-                if isinstance(
-                    timestamp_value,
-                    (int, float),
-                )
-                else None
+            is_reference_frame = (
+                frame_request[
+                    "isReferenceFrame"
+                ]
             )
 
             pose_frame = (
@@ -986,12 +1014,19 @@ def analyze_club_detection(
                 frame_results.append(
                     {
                         "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
                         "frameIndex": (
                             frame_index
                         ),
-                        "timestampSeconds": (
-                            timestamp_seconds
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
                         ),
+                        "isReferenceFrame": (
+                            is_reference_frame
+                        ),
+                        "timestampSeconds": None,
                         "detected": False,
                         "confidence": 0.0,
                         "handAnchor": None,
@@ -1000,12 +1035,25 @@ def analyze_club_detection(
                         "failureReason": (
                             "Pose timeline did not "
                             "contain the requested "
-                            "reference frame."
+                            "club-tracking frame."
                         ),
                         "debugImagePath": None,
                     }
                 )
                 continue
+
+            timestamp_value = pose_frame.get(
+                "timestampSeconds"
+            )
+
+            timestamp_seconds = (
+                float(timestamp_value)
+                if isinstance(
+                    timestamp_value,
+                    (int, float),
+                )
+                else None
+            )
 
             hand_anchor = (
                 calculate_hand_anchor(
@@ -1023,8 +1071,17 @@ def analyze_club_detection(
                 frame_results.append(
                     {
                         "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
                         "frameIndex": (
                             frame_index
+                        ),
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
+                        ),
+                        "isReferenceFrame": (
+                            is_reference_frame
                         ),
                         "timestampSeconds": (
                             timestamp_seconds
@@ -1053,8 +1110,17 @@ def analyze_club_detection(
                 frame_results.append(
                     {
                         "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
                         "frameIndex": (
                             frame_index
+                        ),
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
+                        ),
+                        "isReferenceFrame": (
+                            is_reference_frame
                         ),
                         "timestampSeconds": (
                             timestamp_seconds
@@ -1065,8 +1131,8 @@ def analyze_club_detection(
                         "shaftLine": None,
                         "candidateCount": 0,
                         "failureReason": (
-                            "The reference video "
-                            "frame could not be read."
+                            "The requested club-tracking "
+                            "video frame could not be read."
                         ),
                         "debugImagePath": None,
                     }
@@ -1144,8 +1210,17 @@ def analyze_club_detection(
                 frame_results.append(
                     {
                         "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
                         "frameIndex": (
                             frame_index
+                        ),
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
+                        ),
+                        "isReferenceFrame": (
+                            is_reference_frame
                         ),
                         "timestampSeconds": (
                             timestamp_seconds
@@ -1200,7 +1275,16 @@ def analyze_club_detection(
             frame_results.append(
                 {
                     "phase": phase_name,
+                    "referenceFrameIndex": (
+                        reference_frame_index
+                    ),
                     "frameIndex": frame_index,
+                    "phaseOffsetFrames": (
+                        phase_offset_frames
+                    ),
+                    "isReferenceFrame": (
+                        is_reference_frame
+                    ),
                     "timestampSeconds": (
                         timestamp_seconds
                     ),
@@ -1318,9 +1402,16 @@ def analyze_club_detection(
             "referenceFrameSource": (
                 "golf-phase-refiner"
             ),
+            "frameSampling": (
+                "Each golf reference phase is expanded "
+                "into a bounded dense frame window. "
+                "Overlapping frames are processed once "
+                "and assigned to the nearest reference "
+                "phase."
+            ),
             "temporalValidation": (
-                "Successful reference-frame detections "
-                "are compared chronologically using the "
+                "Successful dense-frame detections are "
+                "compared chronologically using the "
                 "smallest undirected shaft-angle change. "
                 "Large changes are retained and marked "
                 "for review rather than rejected."
@@ -1345,11 +1436,11 @@ def analyze_club_detection(
                     "candidates."
                 ),
                 (
-                    "Reference phases may be separated "
-                    "by many video frames, so a temporal "
-                    "review status indicates a large "
-                    "angle change rather than a proven "
-                    "detection error."
+                    "A temporal review status identifies "
+                    "an unusually large shaft-angle change "
+                    "between successful dense-frame "
+                    "detections, but does not by itself "
+                    "prove that either detection is wrong."
                 ),
                 (
                     "A missing detection is retained "
@@ -1360,7 +1451,7 @@ def analyze_club_detection(
         },
         "summary": {
             "requestedFrames": len(
-                reference_phases
+                frame_requests
             ),
             "processedFrames": (
                 processed_count
