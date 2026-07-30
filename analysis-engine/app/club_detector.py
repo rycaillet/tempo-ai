@@ -8,6 +8,9 @@ from typing import Any, Mapping, Sequence, TypedDict
 import cv2
 import numpy as np
 
+from app.club_frame_window import (
+    build_dense_club_frame_requests,
+)
 from app.pose_detector import (
     read_frame_at_index,
     rotate_frame,
@@ -49,6 +52,8 @@ CANNY_HIGH_THRESHOLD = 150
 HOUGH_THRESHOLD = 24
 HOUGH_MAX_LINE_GAP = 18
 
+MAXIMUM_REFERENCE_ANGLE_CHANGE_DEGREES = 75.0
+
 
 class PixelPoint(TypedDict):
     x: float
@@ -72,9 +77,19 @@ class ShaftCandidate(TypedDict):
     score: float
 
 
+class TemporalComparison(TypedDict):
+    previousPhase: str
+    previousFrameIndex: int
+    angleChangeDegrees: float
+    withinThreshold: bool
+
+
 class ClubFrameDetection(TypedDict):
     phase: str
+    referenceFrameIndex: int
     frameIndex: int
+    phaseOffsetFrames: int
+    isReferenceFrame: bool
     timestampSeconds: float | None
     detected: bool
     confidence: float
@@ -83,6 +98,8 @@ class ClubFrameDetection(TypedDict):
     candidateCount: int
     failureReason: str | None
     debugImagePath: str | None
+    temporalStatus: str
+    temporalComparison: TemporalComparison | None
 
 
 class ClubDetectionSummary(TypedDict):
@@ -94,6 +111,10 @@ class ClubDetectionSummary(TypedDict):
     averageConfidence: float
     selectedRotation: str
     visualizationCount: int
+    temporalComparisonCount: int
+    temporallyConsistentFrames: int
+    temporalReviewFrames: int
+    maximumAngleChangeDegrees: float | None
 
 
 class ClubDetectionResult(TypedDict):
@@ -726,6 +747,98 @@ def get_reference_phases(
     return references
 
 
+def calculate_axial_angle_change(
+    first_angle: float,
+    second_angle: float,
+) -> float:
+    """
+    Return the smallest difference between two undirected line
+    angles.
+
+    Shaft lines are axes rather than directional vectors, so angles
+    separated by 180 degrees describe the same physical line.
+    """
+
+    difference = abs(
+        second_angle - first_angle
+    ) % 180.0
+
+    if difference > 90.0:
+        difference = 180.0 - difference
+
+    return difference
+
+
+def apply_temporal_consistency_validation(
+    frame_results: list[ClubFrameDetection],
+) -> None:
+    """
+    Compare successful club detections in chronological order.
+
+    Dense neighboring frames normally produce gradual shaft-angle
+    changes. Large changes are retained and marked for review rather
+    than rejected or replaced so downstream tracking can inspect the
+    original detection evidence.
+    """
+
+    previous_detection: ClubFrameDetection | None = None
+
+    for frame_result in frame_results:
+        frame_result["temporalComparison"] = None
+
+        if not frame_result["detected"]:
+            frame_result["temporalStatus"] = "unavailable"
+            continue
+
+        shaft_line = frame_result["shaftLine"]
+
+        if shaft_line is None:
+            frame_result["temporalStatus"] = "unavailable"
+            continue
+
+        if previous_detection is None:
+            frame_result["temporalStatus"] = "not_compared"
+            previous_detection = frame_result
+            continue
+
+        previous_shaft_line = previous_detection["shaftLine"]
+
+        if previous_shaft_line is None:
+            frame_result["temporalStatus"] = "not_compared"
+            previous_detection = frame_result
+            continue
+
+        angle_change = calculate_axial_angle_change(
+            previous_shaft_line["angleDegrees"],
+            shaft_line["angleDegrees"],
+        )
+
+        within_threshold = (
+            angle_change
+            <= MAXIMUM_REFERENCE_ANGLE_CHANGE_DEGREES
+        )
+
+        frame_result["temporalComparison"] = {
+            "previousPhase": previous_detection["phase"],
+            "previousFrameIndex": previous_detection[
+                "frameIndex"
+            ],
+            "angleChangeDegrees": round(
+                angle_change,
+                3,
+            ),
+            "withinThreshold": within_threshold,
+        }
+
+        frame_result["temporalStatus"] = (
+            "consistent"
+            if within_threshold
+            else "review"
+        )
+
+        previous_detection = frame_result
+
+
 def analyze_club_detection(
     *,
     video_path: Path,
@@ -816,6 +929,24 @@ def analyze_club_detection(
         )
     )
 
+    if not pose_frame_lookup:
+        raise ValueError(
+            "Pose timeline does not contain any "
+            "usable indexed frames."
+        )
+
+    frame_requests = (
+        build_dense_club_frame_requests(
+            reference_phases,
+            minimum_frame_index=min(
+                pose_frame_lookup
+            ),
+            maximum_frame_index=max(
+                pose_frame_lookup
+            ),
+        )
+    )
+
     resolved_visualization_directory = (
         visualization_directory
         if visualization_directory is not None
@@ -850,24 +981,27 @@ def analyze_club_detection(
     ] = []
 
     try:
-        for phase_name, phase in (
-            reference_phases
-        ):
-            frame_index = int(
-                phase["frameIndex"]
+        for frame_request in frame_requests:
+            phase_name = frame_request[
+                "phase"
+            ]
+            reference_frame_index = (
+                frame_request[
+                    "referenceFrameIndex"
+                ]
             )
-
-            timestamp_value = phase.get(
-                "timestampSeconds"
+            frame_index = frame_request[
+                "frameIndex"
+            ]
+            phase_offset_frames = (
+                frame_request[
+                    "phaseOffsetFrames"
+                ]
             )
-
-            timestamp_seconds = (
-                float(timestamp_value)
-                if isinstance(
-                    timestamp_value,
-                    (int, float),
-                )
-                else None
+            is_reference_frame = (
+                frame_request[
+                    "isReferenceFrame"
+                ]
             )
 
             pose_frame = (
@@ -880,12 +1014,19 @@ def analyze_club_detection(
                 frame_results.append(
                     {
                         "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
                         "frameIndex": (
                             frame_index
                         ),
-                        "timestampSeconds": (
-                            timestamp_seconds
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
                         ),
+                        "isReferenceFrame": (
+                            is_reference_frame
+                        ),
+                        "timestampSeconds": None,
                         "detected": False,
                         "confidence": 0.0,
                         "handAnchor": None,
@@ -894,12 +1035,25 @@ def analyze_club_detection(
                         "failureReason": (
                             "Pose timeline did not "
                             "contain the requested "
-                            "reference frame."
+                            "club-tracking frame."
                         ),
                         "debugImagePath": None,
                     }
                 )
                 continue
+
+            timestamp_value = pose_frame.get(
+                "timestampSeconds"
+            )
+
+            timestamp_seconds = (
+                float(timestamp_value)
+                if isinstance(
+                    timestamp_value,
+                    (int, float),
+                )
+                else None
+            )
 
             hand_anchor = (
                 calculate_hand_anchor(
@@ -917,8 +1071,17 @@ def analyze_club_detection(
                 frame_results.append(
                     {
                         "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
                         "frameIndex": (
                             frame_index
+                        ),
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
+                        ),
+                        "isReferenceFrame": (
+                            is_reference_frame
                         ),
                         "timestampSeconds": (
                             timestamp_seconds
@@ -947,8 +1110,17 @@ def analyze_club_detection(
                 frame_results.append(
                     {
                         "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
                         "frameIndex": (
                             frame_index
+                        ),
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
+                        ),
+                        "isReferenceFrame": (
+                            is_reference_frame
                         ),
                         "timestampSeconds": (
                             timestamp_seconds
@@ -959,8 +1131,8 @@ def analyze_club_detection(
                         "shaftLine": None,
                         "candidateCount": 0,
                         "failureReason": (
-                            "The reference video "
-                            "frame could not be read."
+                            "The requested club-tracking "
+                            "video frame could not be read."
                         ),
                         "debugImagePath": None,
                     }
@@ -1038,8 +1210,17 @@ def analyze_club_detection(
                 frame_results.append(
                     {
                         "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
                         "frameIndex": (
                             frame_index
+                        ),
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
+                        ),
+                        "isReferenceFrame": (
+                            is_reference_frame
                         ),
                         "timestampSeconds": (
                             timestamp_seconds
@@ -1094,7 +1275,16 @@ def analyze_club_detection(
             frame_results.append(
                 {
                     "phase": phase_name,
+                    "referenceFrameIndex": (
+                        reference_frame_index
+                    ),
                     "frameIndex": frame_index,
+                    "phaseOffsetFrames": (
+                        phase_offset_frames
+                    ),
+                    "isReferenceFrame": (
+                        is_reference_frame
+                    ),
                     "timestampSeconds": (
                         timestamp_seconds
                     ),
@@ -1123,6 +1313,10 @@ def analyze_club_detection(
     finally:
         video.release()
 
+    apply_temporal_consistency_validation(
+        frame_results
+    )
+
     detected_results = [
         frame
         for frame in frame_results
@@ -1134,6 +1328,37 @@ def analyze_club_detection(
         for frame in frame_results
         if frame["debugImagePath"] is not None
     ]
+
+    temporal_comparisons = [
+        comparison
+        for frame in frame_results
+        if (
+            comparison
+            := frame["temporalComparison"]
+        )
+        is not None
+    ]
+
+    temporally_consistent_results = [
+        frame
+        for frame in frame_results
+        if frame["temporalStatus"] == "consistent"
+    ]
+
+    temporal_review_results = [
+        frame
+        for frame in frame_results
+        if frame["temporalStatus"] == "review"
+    ]
+
+    maximum_angle_change = (
+        max(
+            comparison["angleChangeDegrees"]
+            for comparison in temporal_comparisons
+        )
+        if temporal_comparisons
+        else None
+    )
 
     detected_count = len(
         detected_results
@@ -1177,6 +1402,20 @@ def analyze_club_detection(
             "referenceFrameSource": (
                 "golf-phase-refiner"
             ),
+            "frameSampling": (
+                "Each golf reference phase is expanded "
+                "into a bounded dense frame window. "
+                "Overlapping frames are processed once "
+                "and assigned to the nearest reference "
+                "phase."
+            ),
+            "temporalValidation": (
+                "Successful dense-frame detections are "
+                "compared chronologically using the "
+                "smallest undirected shaft-angle change. "
+                "Large changes are retained and marked "
+                "for review rather than rejected."
+            ),
             "visualizations": (
                 "Debug images show the selected "
                 "shaft candidate and detected hand "
@@ -1197,6 +1436,13 @@ def analyze_club_detection(
                     "candidates."
                 ),
                 (
+                    "A temporal review status identifies "
+                    "an unusually large shaft-angle change "
+                    "between successful dense-frame "
+                    "detections, but does not by itself "
+                    "prove that either detection is wrong."
+                ),
+                (
                     "A missing detection is retained "
                     "as an explicit failure state "
                     "instead of being inferred."
@@ -1205,7 +1451,7 @@ def analyze_club_detection(
         },
         "summary": {
             "requestedFrames": len(
-                reference_phases
+                frame_requests
             ),
             "processedFrames": (
                 processed_count
@@ -1235,6 +1481,23 @@ def analyze_club_detection(
             ),
             "visualizationCount": len(
                 visualized_results
+            ),
+            "temporalComparisonCount": len(
+                temporal_comparisons
+            ),
+            "temporallyConsistentFrames": len(
+                temporally_consistent_results
+            ),
+            "temporalReviewFrames": len(
+                temporal_review_results
+            ),
+            "maximumAngleChangeDegrees": (
+                round(
+                    maximum_angle_change,
+                    3,
+                )
+                if maximum_angle_change is not None
+                else None
             ),
         },
         "frames": frame_results,

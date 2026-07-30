@@ -5,7 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from app.club_detector import (
+    ClubFrameDetection,
+    apply_temporal_consistency_validation,
     build_shaft_candidate,
+    calculate_axial_angle_change,
     calculate_hand_anchor,
     calculate_nearest_endpoint_distance,
     create_club_detection_output_path,
@@ -13,6 +16,64 @@ from app.club_detector import (
     get_reference_phases,
     get_rotated_dimensions,
 )
+
+
+def create_club_frame_detection(
+    *,
+    phase: str,
+    frame_index: int,
+    angle_degrees: float | None,
+    detected: bool = True,
+) -> ClubFrameDetection:
+    shaft_line = (
+        {
+            "start": {
+                "x": 100.0,
+                "y": 100.0,
+            },
+            "end": {
+                "x": 300.0,
+                "y": 300.0,
+            },
+            "lengthPixels": 282.843,
+            "angleDegrees": angle_degrees,
+        }
+        if detected
+        and angle_degrees is not None
+        else None
+    )
+
+    return {
+        "phase": phase,
+        "frameIndex": frame_index,
+        "timestampSeconds": (
+            frame_index / 30.0
+        ),
+        "detected": detected,
+        "confidence": (
+            0.8 if detected else 0.0
+        ),
+        "handAnchor": (
+            {
+                "x": 100.0,
+                "y": 100.0,
+            }
+            if detected
+            else None
+        ),
+        "shaftLine": shaft_line,
+        "candidateCount": (
+            3 if detected else 0
+        ),
+        "failureReason": (
+            None
+            if detected
+            else "No reliable candidate."
+        ),
+        "debugImagePath": None,
+        "temporalStatus": "pending",
+        "temporalComparison": None,
+    }
 
 
 class ClubDetectorTests(
@@ -432,6 +493,232 @@ class ClubDetectorTests(
             "phases object",
         ):
             get_reference_phases({})
+
+    def test_axial_angle_change_handles_reversed_line_direction(
+        self,
+    ) -> None:
+        result = calculate_axial_angle_change(
+            5.0,
+            175.0,
+        )
+
+        self.assertEqual(
+            result,
+            10.0,
+        )
+
+    def test_temporal_validation_accepts_small_angle_change(
+        self,
+    ) -> None:
+        frames = [
+            create_club_frame_detection(
+                phase="address",
+                frame_index=65,
+                angle_degrees=40.0,
+            ),
+            create_club_frame_detection(
+                phase="takeaway",
+                frame_index=70,
+                angle_degrees=55.0,
+            ),
+        ]
+
+        apply_temporal_consistency_validation(
+            frames
+        )
+
+        self.assertEqual(
+            frames[0]["temporalStatus"],
+            "not_compared",
+        )
+
+        self.assertIsNone(
+            frames[0]["temporalComparison"]
+        )
+
+        self.assertEqual(
+            frames[1]["temporalStatus"],
+            "consistent",
+        )
+
+        self.assertEqual(
+            frames[1]["temporalComparison"],
+            {
+                "previousPhase": "address",
+                "previousFrameIndex": 65,
+                "angleChangeDegrees": 15.0,
+                "withinThreshold": True,
+            },
+        )
+
+    def test_temporal_validation_flags_large_angle_change(
+        self,
+    ) -> None:
+        frames = [
+            create_club_frame_detection(
+                phase="address",
+                frame_index=65,
+                angle_degrees=5.0,
+            ),
+            create_club_frame_detection(
+                phase="takeaway",
+                frame_index=70,
+                angle_degrees=90.0,
+            ),
+        ]
+
+        apply_temporal_consistency_validation(
+            frames
+        )
+
+        self.assertEqual(
+            frames[1]["temporalStatus"],
+            "review",
+        )
+
+        comparison = frames[1][
+            "temporalComparison"
+        ]
+
+        self.assertIsNotNone(
+            comparison
+        )
+
+        assert comparison is not None
+
+        self.assertEqual(
+            comparison[
+                "angleChangeDegrees"
+            ],
+            85.0,
+        )
+
+        self.assertFalse(
+            comparison[
+                "withinThreshold"
+            ]
+        )
+
+    def test_temporal_validation_skips_failed_detection(
+        self,
+    ) -> None:
+        frames = [
+            create_club_frame_detection(
+                phase="address",
+                frame_index=65,
+                angle_degrees=40.0,
+            ),
+            create_club_frame_detection(
+                phase="takeaway",
+                frame_index=70,
+                angle_degrees=None,
+                detected=False,
+            ),
+            create_club_frame_detection(
+                phase="topOfBackswing",
+                frame_index=90,
+                angle_degrees=50.0,
+            ),
+        ]
+
+        apply_temporal_consistency_validation(
+            frames
+        )
+
+        self.assertEqual(
+            frames[1]["temporalStatus"],
+            "unavailable",
+        )
+
+        self.assertIsNone(
+            frames[1]["temporalComparison"]
+        )
+
+        comparison = frames[2][
+            "temporalComparison"
+        ]
+
+        self.assertIsNotNone(
+            comparison
+        )
+
+        assert comparison is not None
+
+        self.assertEqual(
+            comparison["previousPhase"],
+            "address",
+        )
+
+        self.assertEqual(
+            comparison[
+                "previousFrameIndex"
+            ],
+            65,
+        )
+
+        self.assertEqual(
+            comparison[
+                "angleChangeDegrees"
+            ],
+            10.0,
+        )
+
+    def test_temporal_validation_retains_review_detection_for_next_comparison(
+        self,
+    ) -> None:
+        frames = [
+            create_club_frame_detection(
+                phase="address",
+                frame_index=65,
+                angle_degrees=5.0,
+            ),
+            create_club_frame_detection(
+                phase="takeaway",
+                frame_index=70,
+                angle_degrees=90.0,
+            ),
+            create_club_frame_detection(
+                phase="topOfBackswing",
+                frame_index=90,
+                angle_degrees=100.0,
+            ),
+        ]
+
+        apply_temporal_consistency_validation(
+            frames
+        )
+
+        self.assertEqual(
+            frames[1]["temporalStatus"],
+            "review",
+        )
+
+        self.assertEqual(
+            frames[2]["temporalStatus"],
+            "consistent",
+        )
+
+        comparison = frames[2][
+            "temporalComparison"
+        ]
+
+        self.assertIsNotNone(
+            comparison
+        )
+
+        assert comparison is not None
+
+        self.assertEqual(
+            comparison["previousPhase"],
+            "takeaway",
+        )
+
+        self.assertEqual(
+            comparison[
+                "angleChangeDegrees"
+            ],
+            10.0,
+        )
 
 
 if __name__ == "__main__":
