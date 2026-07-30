@@ -15,6 +15,7 @@ LEFT_HIP = 23
 RIGHT_HIP = 24
 
 MINIMUM_VISIBILITY = 0.45
+MINIMUM_PRESENCE = 0.45
 
 MINIMUM_ADDRESS_TOP_GAP_SECONDS = 0.70
 MAXIMUM_ADDRESS_SEARCH_SECONDS = 2.00
@@ -150,6 +151,8 @@ def point_distance(
 
 def calculate_body_features(
     frame: PoseFrame,
+    *,
+    allow_single_wrist_fallback: bool = False,
 ) -> dict[str, Any] | None:
     if not frame.get("poseDetected"):
         return None
@@ -164,14 +167,6 @@ def calculate_body_features(
         landmarks,
         RIGHT_SHOULDER,
     )
-    left_wrist = visible_landmark(
-        landmarks,
-        LEFT_WRIST,
-    )
-    right_wrist = visible_landmark(
-        landmarks,
-        RIGHT_WRIST,
-    )
     left_hip = visible_landmark(
         landmarks,
         LEFT_HIP,
@@ -181,24 +176,103 @@ def calculate_body_features(
         RIGHT_HIP,
     )
 
-    required = (
+    required_body_landmarks = (
         left_shoulder,
         right_shoulder,
-        left_wrist,
-        right_wrist,
         left_hip,
         right_hip,
     )
 
-    if any(value is None for value in required):
+    if any(
+        landmark is None
+        for landmark in required_body_landmarks
+    ):
         return None
 
     assert left_shoulder is not None
     assert right_shoulder is not None
-    assert left_wrist is not None
-    assert right_wrist is not None
     assert left_hip is not None
     assert right_hip is not None
+
+    left_wrist_raw = landmarks.get(LEFT_WRIST)
+    right_wrist_raw = landmarks.get(RIGHT_WRIST)
+
+    left_wrist_visible = visible_landmark(
+        landmarks,
+        LEFT_WRIST,
+    )
+    right_wrist_visible = visible_landmark(
+        landmarks,
+        RIGHT_WRIST,
+    )
+
+    wrist_tracking_mode = "both-visible"
+
+    if (
+        left_wrist_visible is not None
+        and right_wrist_visible is not None
+    ):
+        wrist_center = midpoint(
+            left_wrist_visible,
+            right_wrist_visible,
+        )
+        wrist_separation = point_distance(
+            (
+                left_wrist_visible["x"],
+                left_wrist_visible["y"],
+            ),
+            (
+                right_wrist_visible["x"],
+                right_wrist_visible["y"],
+            ),
+        )
+        wrist_visibility = min(
+            left_wrist_visible["visibility"],
+            right_wrist_visible["visibility"],
+        )
+    elif allow_single_wrist_fallback:
+        visible_wrist = (
+            left_wrist_visible
+            if left_wrist_visible is not None
+            else right_wrist_visible
+        )
+        occluded_wrist = (
+            right_wrist_raw
+            if left_wrist_visible is not None
+            else left_wrist_raw
+        )
+
+        if visible_wrist is None or occluded_wrist is None:
+            return None
+
+        if (
+            occluded_wrist.get("presence", 0.0)
+            < MINIMUM_PRESENCE
+        ):
+            return None
+
+        wrist_center = (
+            visible_wrist["x"],
+            visible_wrist["y"],
+        )
+        wrist_separation = point_distance(
+            (
+                visible_wrist["x"],
+                visible_wrist["y"],
+            ),
+            (
+                occluded_wrist["x"],
+                occluded_wrist["y"],
+            ),
+        )
+        wrist_visibility = visible_wrist["visibility"]
+        wrist_tracking_mode = (
+            "left-visible-single-wrist"
+            if left_wrist_visible is not None
+            else "right-visible-single-wrist"
+        )
+    else:
+        return None
 
     shoulder_center = midpoint(
         left_shoulder,
@@ -207,10 +281,6 @@ def calculate_body_features(
     hip_center = midpoint(
         left_hip,
         right_hip,
-    )
-    wrist_center = midpoint(
-        left_wrist,
-        right_wrist,
     )
 
     torso_length = point_distance(
@@ -221,18 +291,12 @@ def calculate_body_features(
     if torso_length <= 0.0001:
         return None
 
-    wrist_separation = point_distance(
-        (left_wrist["x"], left_wrist["y"]),
-        (right_wrist["x"], right_wrist["y"]),
-    )
-
     minimum_visibility = min(
         left_shoulder["visibility"],
         right_shoulder["visibility"],
-        left_wrist["visibility"],
-        right_wrist["visibility"],
         left_hip["visibility"],
         right_hip["visibility"],
+        wrist_visibility,
     )
 
     return {
@@ -252,8 +316,8 @@ def calculate_body_features(
         )
         / torso_length,
         "minimumVisibility": minimum_visibility,
+        "wristTrackingMode": wrist_tracking_mode,
     }
-
 
 def estimate_fps(
     motion_frames: list[MotionFrame],
@@ -483,6 +547,15 @@ def find_address_reference(
     candidate_data: dict[int, dict[str, Any]] = {}
     plausible_address_flags: list[bool] = []
 
+    missing_pose_frame_count = 0
+    unreliable_feature_frame_count = 0
+    posture_valid_frame_count = 0
+    stability_valid_frame_count = 0
+
+    wrist_separation_values: list[float] = []
+    wrist_height_values: list[float] = []
+    local_motion_values: list[float] = []
+
     for motion_index in range(
         search_start_index,
         search_end_index + 1,
@@ -493,12 +566,17 @@ def find_address_reference(
         )
 
         if pose_frame is None:
+            missing_pose_frame_count += 1
             plausible_address_flags.append(False)
             continue
 
-        features = calculate_body_features(pose_frame)
+        features = calculate_body_features(
+            pose_frame,
+            allow_single_wrist_fallback=True,
+        )
 
         if features is None:
+            unreliable_feature_frame_count += 1
             plausible_address_flags.append(False)
             continue
 
@@ -515,6 +593,16 @@ def find_address_reference(
             "wristHeightFromShouldersNormalized"
         ]
 
+        wrist_separation_values.append(
+            wrist_separation
+        )
+        wrist_height_values.append(
+            wrist_height
+        )
+
+        if math.isfinite(local_motion):
+            local_motion_values.append(local_motion)
+
         plausible_posture = (
             wrist_separation
             <= ADDRESS_MAXIMUM_WRIST_SEPARATION
@@ -527,6 +615,12 @@ def find_address_reference(
             local_motion
             <= ADDRESS_MAXIMUM_LOCAL_MOTION
         )
+
+        if plausible_posture:
+            posture_valid_frame_count += 1
+
+        if stable_enough:
+            stability_valid_frame_count += 1
 
         is_plausible = (
             plausible_posture
@@ -545,18 +639,128 @@ def find_address_reference(
             "isPlausible": is_plausible,
         }
 
+    all_plausible_runs = find_true_runs(
+        plausible_address_flags
+    )
+
     stable_runs = [
         run
-        for run in find_true_runs(
-            plausible_address_flags
-        )
+        for run in all_plausible_runs
         if run[1] - run[0] + 1 >= stable_run_frames
     ]
 
     if not stable_runs:
+        longest_plausible_run = max(
+            (
+                run_end - run_start + 1
+                for run_start, run_end
+                in all_plausible_runs
+            ),
+            default=0,
+        )
+
+        failure_diagnostics = {
+            "estimatedFps": round_value(
+                estimated_fps
+            ),
+            "searchStartFrame": (
+                motion_frames[
+                    search_start_index
+                ]["frameIndex"]
+            ),
+            "searchEndFrame": (
+                motion_frames[
+                    search_end_index
+                ]["frameIndex"]
+            ),
+            "searchedFrameCount": (
+                search_end_index
+                - search_start_index
+                + 1
+            ),
+            "requiredStableFrames": (
+                stable_run_frames
+            ),
+            "longestPlausibleRunFrames": (
+                longest_plausible_run
+            ),
+            "missingPoseFrameCount": (
+                missing_pose_frame_count
+            ),
+            "unreliableFeatureFrameCount": (
+                unreliable_feature_frame_count
+            ),
+            "reliableFeatureFrameCount": len(
+                candidate_data
+            ),
+            "postureValidFrameCount": (
+                posture_valid_frame_count
+            ),
+            "stabilityValidFrameCount": (
+                stability_valid_frame_count
+            ),
+            "fullyPlausibleFrameCount": sum(
+                plausible_address_flags
+            ),
+            "wristSeparationRange": {
+                "minimum": round_value(
+                    min(wrist_separation_values)
+                )
+                if wrist_separation_values
+                else None,
+                "maximum": round_value(
+                    max(wrist_separation_values)
+                )
+                if wrist_separation_values
+                else None,
+                "allowedMaximum": (
+                    ADDRESS_MAXIMUM_WRIST_SEPARATION
+                ),
+            },
+            "wristHeightFromShouldersRange": {
+                "minimum": round_value(
+                    min(wrist_height_values)
+                )
+                if wrist_height_values
+                else None,
+                "maximum": round_value(
+                    max(wrist_height_values)
+                )
+                if wrist_height_values
+                else None,
+                "allowedMinimum": (
+                    ADDRESS_MINIMUM_WRIST_HEIGHT
+                ),
+                "allowedMaximum": (
+                    ADDRESS_MAXIMUM_WRIST_HEIGHT
+                ),
+            },
+            "localRawMotionRange": {
+                "minimum": round_value(
+                    min(local_motion_values)
+                )
+                if local_motion_values
+                else None,
+                "maximum": round_value(
+                    max(local_motion_values)
+                )
+                if local_motion_values
+                else None,
+                "allowedMaximum": (
+                    ADDRESS_MAXIMUM_LOCAL_MOTION
+                ),
+            },
+        }
+
+        diagnostic_text = json.dumps(
+            failure_diagnostics,
+            sort_keys=True,
+        )
+
         raise ValueError(
             "No sustained, plausible address posture "
-            "was found before the backswing."
+            "was found before the backswing. "
+            f"Diagnostics: {diagnostic_text}"
         )
 
     absolute_runs = [
@@ -717,7 +921,8 @@ def find_takeaway_reference(
         }
 
     address_features = calculate_body_features(
-        address_pose
+        address_pose,
+        allow_single_wrist_fallback=True,
     )
 
     if address_features is None:
@@ -760,7 +965,10 @@ def find_takeaway_reference(
             candidate_data.append(None)
             continue
 
-        features = calculate_body_features(pose_frame)
+        features = calculate_body_features(
+            pose_frame,
+            allow_single_wrist_fallback=True,
+        )
 
         if features is None:
             qualifying.append(False)
