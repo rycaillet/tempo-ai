@@ -11,9 +11,12 @@ from app.club_detector import (
     calculate_axial_angle_change,
     calculate_hand_anchor,
     calculate_nearest_endpoint_distance,
+    create_candidate_diagnostics,
     create_club_detection_output_path,
     distance_from_point_to_segment,
+    evaluate_shaft_candidate,
     get_reference_phases,
+    record_candidate_rejection,
     get_rotated_dimensions,
 )
 
@@ -65,6 +68,7 @@ def create_club_frame_detection(
         "candidateCount": (
             3 if detected else 0
         ),
+        "candidateDiagnostics": None,
         "failureReason": (
             None
             if detected
@@ -348,6 +352,93 @@ class ClubDetectorTests(
                 "nearestEndpointDistanceRatio"
             ],
             0.02,
+        )
+
+    def test_candidate_evaluation_reports_short_line_reason(
+        self,
+    ) -> None:
+        candidate, reason = evaluate_shaft_candidate(
+            [100, 100, 110, 110],
+            hand_anchor={
+                "x": 100.0,
+                "y": 100.0,
+            },
+            frame_width=1000,
+            frame_height=800,
+        )
+
+        self.assertIsNone(candidate)
+        self.assertEqual(reason, "too_short")
+
+    def test_candidate_evaluation_reports_hand_distance_reason(
+        self,
+    ) -> None:
+        candidate, reason = evaluate_shaft_candidate(
+            [700, 500, 950, 700],
+            hand_anchor={
+                "x": 50.0,
+                "y": 50.0,
+            },
+            frame_width=1000,
+            frame_height=800,
+        )
+
+        self.assertIsNone(candidate)
+        self.assertEqual(
+            reason,
+            "too_far_from_hands",
+        )
+
+    def test_candidate_evaluation_reports_endpoint_reason(
+        self,
+    ) -> None:
+        candidate, reason = evaluate_shaft_candidate(
+            [500, 100, 500, 700],
+            hand_anchor={
+                "x": 500.0,
+                "y": 400.0,
+            },
+            frame_width=1000,
+            frame_height=800,
+        )
+
+        self.assertIsNone(candidate)
+        self.assertEqual(
+            reason,
+            "grip_endpoint_too_far",
+        )
+
+    def test_records_candidate_rejection_totals(
+        self,
+    ) -> None:
+        diagnostics = create_candidate_diagnostics()
+
+        record_candidate_rejection(
+            diagnostics,
+            "too_short",
+        )
+        record_candidate_rejection(
+            diagnostics,
+            "too_short",
+        )
+        record_candidate_rejection(
+            diagnostics,
+            "grip_endpoint_too_far",
+        )
+
+        self.assertEqual(
+            diagnostics["rejectedTooShort"],
+            2,
+        )
+        self.assertEqual(
+            diagnostics[
+                "rejectedGripEndpointTooFar"
+            ],
+            1,
+        )
+        self.assertEqual(
+            diagnostics["acceptedCandidateCount"],
+            0,
         )
 
     def test_candidate_rejects_short_line(
