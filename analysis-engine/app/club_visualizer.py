@@ -13,6 +13,7 @@ TEXT_SCALE = 0.55
 TEXT_THICKNESS = 1
 LINE_THICKNESS = 4
 ANCHOR_RADIUS = 7
+SEARCH_REGION_THICKNESS = 2
 
 
 def create_club_visualization_directory(
@@ -84,6 +85,42 @@ def point_to_integer_tuple(
     )
 
 
+def get_search_region_corners(
+    search_region: Mapping[str, Any],
+) -> tuple[
+    tuple[int, int],
+    tuple[int, int],
+] | None:
+    x_min = search_region.get("xMin")
+    y_min = search_region.get("yMin")
+    x_max = search_region.get("xMax")
+    y_max = search_region.get("yMax")
+
+    values = (
+        x_min,
+        y_min,
+        x_max,
+        y_max,
+    )
+
+    if not all(
+        isinstance(value, (int, float))
+        for value in values
+    ):
+        return None
+
+    return (
+        (
+            int(round(float(x_min))),
+            int(round(float(y_min))),
+        ),
+        (
+            int(round(float(x_max))),
+            int(round(float(y_max))),
+        ),
+    )
+
+
 def draw_text_line(
     image: np.ndarray,
     text: str,
@@ -139,6 +176,7 @@ def draw_club_detection_visualization(
     candidate_count: int,
     detected: bool,
     failure_reason: str | None,
+    search_region: Mapping[str, Any] | None = None,
 ) -> np.ndarray:
     if frame.size == 0:
         raise ValueError(
@@ -147,6 +185,25 @@ def draw_club_detection_visualization(
         )
 
     annotated_frame = frame.copy()
+
+    if search_region is not None:
+        corners = get_search_region_corners(
+            search_region
+        )
+
+        if corners is not None:
+            top_left, bottom_right = corners
+
+            cv2.rectangle(
+                annotated_frame,
+                top_left,
+                bottom_right,
+                (255, 255, 0),
+                thickness=(
+                    SEARCH_REGION_THICKNESS
+                ),
+                lineType=cv2.LINE_AA,
+            )
 
     if hand_anchor is not None:
         anchor_point = point_to_integer_tuple(

@@ -113,6 +113,14 @@ class ClubVisualizerTests(unittest.TestCase):
                     "x": 180.0,
                     "y": 150.0,
                 },
+                search_region={
+                    "xMin": 140,
+                    "yMin": 100,
+                    "xMax": 340,
+                    "yMax": 260,
+                    "width": 200,
+                    "height": 160,
+                },
                 shaft_line={
                     "start": {
                         "x": 180.0,
@@ -151,6 +159,46 @@ class ClubVisualizerTests(unittest.TestCase):
             )
         )
 
+    def test_draw_visualization_includes_search_region(
+        self,
+    ) -> None:
+        frame = np.zeros(
+            (300, 400, 3),
+            dtype=np.uint8,
+        )
+
+        visualization = (
+            draw_club_detection_visualization(
+                frame,
+                phase_name="takeaway",
+                frame_index=67,
+                hand_anchor=None,
+                search_region={
+                    "xMin": 100,
+                    "yMin": 80,
+                    "xMax": 300,
+                    "yMax": 240,
+                    "width": 200,
+                    "height": 160,
+                },
+                shaft_line=None,
+                confidence=0.0,
+                candidate_count=0,
+                detected=False,
+                failure_reason=None,
+            )
+        )
+
+        self.assertGreater(
+            int(
+                visualization[
+                    80,
+                    100,
+                ].sum()
+            ),
+            0,
+        )
+
     def test_draw_failed_detection_visualization(
         self,
     ) -> None:
@@ -167,6 +215,14 @@ class ClubVisualizerTests(unittest.TestCase):
                 hand_anchor={
                     "x": 190.0,
                     "y": 160.0,
+                },
+                search_region={
+                    "xMin": 120,
+                    "yMin": 90,
+                    "xMax": 330,
+                    "yMax": 260,
+                    "width": 210,
+                    "height": 170,
                 },
                 shaft_line=None,
                 confidence=0.0,

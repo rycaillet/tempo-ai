@@ -7,6 +7,7 @@ from typing import Any
 from app.club_detector import (
     build_shaft_candidate,
     calculate_hand_anchor,
+    calculate_nearest_endpoint_distance,
     create_club_detection_output_path,
     distance_from_point_to_segment,
     get_reference_phases,
@@ -183,7 +184,76 @@ class ClubDetectorTests(
             0.0,
         )
 
-    def test_candidate_accepts_long_line_near_hands(
+    def test_nearest_endpoint_distance_uses_closest_endpoint(
+        self,
+    ) -> None:
+        distance = (
+            calculate_nearest_endpoint_distance(
+                {
+                    "x": 12.0,
+                    "y": 10.0,
+                },
+                {
+                    "x": 10.0,
+                    "y": 10.0,
+                },
+                {
+                    "x": 100.0,
+                    "y": 100.0,
+                },
+            )
+        )
+
+        self.assertEqual(
+            distance,
+            2.0,
+        )
+
+    def test_nearest_endpoint_distance_differs_from_segment_distance(
+        self,
+    ) -> None:
+        point = {
+            "x": 50.0,
+            "y": 50.0,
+        }
+
+        start = {
+            "x": 0.0,
+            "y": 0.0,
+        }
+
+        end = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        segment_distance = (
+            distance_from_point_to_segment(
+                point,
+                start,
+                end,
+            )
+        )
+
+        endpoint_distance = (
+            calculate_nearest_endpoint_distance(
+                point,
+                start,
+                end,
+            )
+        )
+
+        self.assertEqual(
+            segment_distance,
+            0.0,
+        )
+
+        self.assertGreater(
+            endpoint_distance,
+            0.0,
+        )
+
+    def test_candidate_accepts_plausible_line_with_endpoint_near_hands(
         self,
     ) -> None:
         candidate = build_shaft_candidate(
@@ -212,6 +282,13 @@ class ClubDetectorTests(
             500.0,
         )
 
+        self.assertLess(
+            candidate[
+                "nearestEndpointDistanceRatio"
+            ],
+            0.02,
+        )
+
     def test_candidate_rejects_short_line(
         self,
     ) -> None:
@@ -238,6 +315,66 @@ class ClubDetectorTests(
             },
             frame_width=1000,
             frame_height=800,
+        )
+
+        self.assertIsNone(candidate)
+
+    def test_candidate_rejects_line_that_only_passes_near_hands(
+        self,
+    ) -> None:
+        candidate = build_shaft_candidate(
+            [500, 0, 500, 800],
+            hand_anchor={
+                "x": 500.0,
+                "y": 400.0,
+            },
+            frame_width=1000,
+            frame_height=800,
+        )
+
+        self.assertIsNone(candidate)
+
+    def test_candidate_rejects_excessively_long_line(
+        self,
+    ) -> None:
+        candidate = build_shaft_candidate(
+            [100, 100, 900, 700],
+            hand_anchor={
+                "x": 105.0,
+                "y": 105.0,
+            },
+            frame_width=1000,
+            frame_height=800,
+        )
+
+        self.assertIsNone(candidate)
+
+    def test_candidate_rejects_production_full_height_false_positive(
+        self,
+    ) -> None:
+        candidate = build_shaft_candidate(
+            [604, 443, 604, 0],
+            hand_anchor={
+                "x": 454.601,
+                "y": 115.49,
+            },
+            frame_width=604,
+            frame_height=443,
+        )
+
+        self.assertIsNone(candidate)
+
+    def test_candidate_rejects_invalid_frame_dimensions(
+        self,
+    ) -> None:
+        candidate = build_shaft_candidate(
+            [10, 10, 100, 100],
+            hand_anchor={
+                "x": 10.0,
+                "y": 10.0,
+            },
+            frame_width=0,
+            frame_height=443,
         )
 
         self.assertIsNone(candidate)
