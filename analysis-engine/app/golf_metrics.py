@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.analysis import build_swing_analysis_report
+from app.club_analysis_quality import (
+    build_club_analysis_quality_summary,
+)
 from app.coaching import (
     CoachingProvider,
     build_coach_context,
@@ -2004,6 +2007,15 @@ def analyze_golf_metrics(
         apply_feedback=apply_feedback_eligibility,
     )
 
+    club_analysis_quality = (
+        build_club_analysis_quality_summary(
+            club_detection=club_detection_data,
+            swing_plane=registered_metrics[
+                "swingPlane"
+            ],
+        )
+    )
+
     scoring = calculate_swing_score(
         registrations=METRIC_REGISTRY,
         metric_results=registered_metrics,
@@ -2149,6 +2161,9 @@ def analyze_golf_metrics(
             ),
             "coachingFeedbackEligible": (
                 feedback_eligibility["eligible"]
+            ),
+            "clubAnalysisQuality": (
+                club_analysis_quality
             ),
             **build_registered_metric_summary(
                 registrations=METRIC_REGISTRY,
