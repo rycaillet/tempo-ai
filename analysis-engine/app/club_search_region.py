@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, TypedDict
 
+import cv2
 import numpy as np
 
 
@@ -17,6 +18,11 @@ SEARCH_FORWARD_DIAGONAL_RATIO = 0.34
 SEARCH_BACKWARD_DIAGONAL_RATIO = 0.05
 SEARCH_HALF_WIDTH_DIAGONAL_RATIO = 0.11
 
+CORRIDOR_FORWARD_DIAGONAL_RATIO = 0.34
+CORRIDOR_BACKWARD_DIAGONAL_RATIO = 0.05
+CORRIDOR_HALF_WIDTH_DIAGONAL_RATIO = 0.045
+
+MINIMUM_CORRIDOR_HALF_WIDTH_PIXELS = 12
 MINIMUM_SEARCH_REGION_SIZE_PIXELS = 48
 
 
@@ -157,9 +163,7 @@ def estimate_club_extension_direction(
         DirectionVector
     ] = []
 
-    for elbow_index, wrist_index in (
-        arm_indices
-    ):
+    for elbow_index, wrist_index in arm_indices:
         elbow_landmark = landmark_map.get(
             elbow_index
         )
@@ -188,11 +192,9 @@ def estimate_club_extension_direction(
         if elbow is None or wrist is None:
             continue
 
-        direction = (
-            calculate_forearm_direction(
-                elbow,
-                wrist,
-            )
+        direction = calculate_forearm_direction(
+            elbow,
+            wrist,
         )
 
         if direction is not None:
@@ -368,18 +370,210 @@ def build_pose_guided_search_region(
     frame_width: int,
     frame_height: int,
 ) -> SearchRegion | None:
-    direction = (
-        estimate_club_extension_direction(
-            pose_frame,
-            frame_width=frame_width,
-            frame_height=frame_height,
-        )
+    direction = estimate_club_extension_direction(
+        pose_frame,
+        frame_width=frame_width,
+        frame_height=frame_height,
     )
 
     if direction is None:
         return None
 
     return create_search_region_from_direction(
+        hand_anchor=hand_anchor,
+        direction=direction,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
+
+
+def create_directional_corridor_mask(
+    *,
+    search_region: SearchRegion,
+    hand_anchor: PixelPoint,
+    direction: DirectionVector,
+    frame_width: int,
+    frame_height: int,
+) -> np.ndarray | None:
+    """
+    Create a rotated binary mask representing the most likely club
+    extension corridor.
+
+    The mask is expressed in search-region-local coordinates so it can
+    be applied directly to the cropped frame or its edge image. Pixels
+    inside the corridor are 255 and pixels outside it are zero.
+
+    The corridor remains deliberately broader than a visible golf shaft
+    because the forearm and shaft are not always perfectly collinear.
+    The surrounding rectangular search region remains available as a
+    fallback when this focused geometry does not produce candidates.
+    """
+
+    if frame_width <= 0 or frame_height <= 0:
+        return None
+
+    normalized_direction = normalize_direction(
+        direction["x"],
+        direction["y"],
+    )
+
+    if normalized_direction is None:
+        return None
+
+    region_width = (
+        search_region["xMax"]
+        - search_region["xMin"]
+    )
+
+    region_height = (
+        search_region["yMax"]
+        - search_region["yMin"]
+    )
+
+    if region_width <= 0 or region_height <= 0:
+        return None
+
+    diagonal = math.hypot(
+        frame_width,
+        frame_height,
+    )
+
+    forward_distance = (
+        diagonal
+        * CORRIDOR_FORWARD_DIAGONAL_RATIO
+    )
+
+    backward_distance = (
+        diagonal
+        * CORRIDOR_BACKWARD_DIAGONAL_RATIO
+    )
+
+    half_width = max(
+        float(
+            MINIMUM_CORRIDOR_HALF_WIDTH_PIXELS
+        ),
+        diagonal
+        * CORRIDOR_HALF_WIDTH_DIAGONAL_RATIO,
+    )
+
+    direction_x = normalized_direction["x"]
+    direction_y = normalized_direction["y"]
+
+    perpendicular_x = -direction_y
+    perpendicular_y = direction_x
+
+    start_x = (
+        hand_anchor["x"]
+        - direction_x * backward_distance
+    )
+
+    start_y = (
+        hand_anchor["y"]
+        - direction_y * backward_distance
+    )
+
+    end_x = (
+        hand_anchor["x"]
+        + direction_x * forward_distance
+    )
+
+    end_y = (
+        hand_anchor["y"]
+        + direction_y * forward_distance
+    )
+
+    global_corners = (
+        (
+            start_x
+            + perpendicular_x * half_width,
+            start_y
+            + perpendicular_y * half_width,
+        ),
+        (
+            end_x
+            + perpendicular_x * half_width,
+            end_y
+            + perpendicular_y * half_width,
+        ),
+        (
+            end_x
+            - perpendicular_x * half_width,
+            end_y
+            - perpendicular_y * half_width,
+        ),
+        (
+            start_x
+            - perpendicular_x * half_width,
+            start_y
+            - perpendicular_y * half_width,
+        ),
+    )
+
+    local_polygon = np.array(
+        [
+            [
+                int(
+                    round(
+                        corner_x
+                        - search_region["xMin"]
+                    )
+                ),
+                int(
+                    round(
+                        corner_y
+                        - search_region["yMin"]
+                    )
+                ),
+            ]
+            for corner_x, corner_y in global_corners
+        ],
+        dtype=np.int32,
+    )
+
+    mask = np.zeros(
+        (
+            region_height,
+            region_width,
+        ),
+        dtype=np.uint8,
+    )
+
+    cv2.fillConvexPoly(
+        mask,
+        local_polygon,
+        255,
+    )
+
+    if not np.any(mask):
+        return None
+
+    return mask
+
+
+def build_pose_guided_corridor_mask(
+    pose_frame: Mapping[str, Any],
+    *,
+    search_region: SearchRegion,
+    hand_anchor: PixelPoint,
+    frame_width: int,
+    frame_height: int,
+) -> np.ndarray | None:
+    """
+    Estimate the golfer's club-extension direction and build the focused
+    corridor mask used by candidate generation.
+    """
+
+    direction = estimate_club_extension_direction(
+        pose_frame,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
+
+    if direction is None:
+        return None
+
+    return create_directional_corridor_mask(
+        search_region=search_region,
         hand_anchor=hand_anchor,
         direction=direction,
         frame_width=frame_width,

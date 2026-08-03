@@ -3,21 +3,28 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
+
+import numpy as np
 
 from app.club_detector import (
     ClubFrameDetection,
     apply_temporal_consistency_validation,
+    build_candidate_evaluation_diagnostics,
     build_shaft_candidate,
     calculate_axial_angle_change,
     calculate_hand_anchor,
     calculate_nearest_endpoint_distance,
+    calculate_temporal_candidate_evaluation,
     create_candidate_diagnostics,
     create_club_detection_output_path,
+    detect_shaft_candidates,
     distance_from_point_to_segment,
     evaluate_shaft_candidate,
     get_reference_phases,
-    record_candidate_rejection,
     get_rotated_dimensions,
+    record_candidate_rejection,
+    select_shaft_candidate,
 )
 
 
@@ -78,6 +85,43 @@ def create_club_frame_detection(
         "temporalStatus": "pending",
         "temporalComparison": None,
     }
+
+
+def create_test_search_region() -> dict[str, int]:
+    return {
+        "xMin": 0,
+        "yMin": 0,
+        "xMax": 1000,
+        "yMax": 800,
+    }
+
+
+def create_test_candidate(
+    *,
+    start_x: int,
+    start_y: int,
+    end_x: int,
+    end_y: int,
+    hand_anchor: dict[str, float],
+) -> Any:
+    candidate = build_shaft_candidate(
+        [
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+        ],
+        hand_anchor=hand_anchor,
+        frame_width=1000,
+        frame_height=800,
+    )
+
+    if candidate is None:
+        raise AssertionError(
+            "Test candidate was unexpectedly rejected."
+        )
+
+    return candidate
 
 
 class ClubDetectorTests(
@@ -441,6 +485,342 @@ class ClubDetectorTests(
             0,
         )
 
+    @patch(
+        "app.club_detector.cv2.HoughLinesP"
+    )
+    def test_primary_pass_returns_candidates_without_running_fallback(
+        self,
+        mock_hough_lines: Any,
+    ) -> None:
+        mock_hough_lines.return_value = np.array(
+            [
+                [
+                    [
+                        100,
+                        100,
+                        500,
+                        500,
+                    ]
+                ]
+            ],
+            dtype=np.int32,
+        )
+
+        frame = np.zeros(
+            (800, 1000, 3),
+            dtype=np.uint8,
+        )
+
+        diagnostics = create_candidate_diagnostics()
+
+        candidates = detect_shaft_candidates(
+            frame,
+            hand_anchor={
+                "x": 105.0,
+                "y": 105.0,
+            },
+            search_region=(
+                create_test_search_region()
+            ),
+            diagnostics=diagnostics,
+        )
+
+        self.assertEqual(
+            mock_hough_lines.call_count,
+            1,
+        )
+
+        self.assertEqual(
+            len(candidates),
+            1,
+        )
+
+        self.assertEqual(
+            diagnostics["detectionPass"],
+            "rectangular_primary",
+        )
+
+        self.assertFalse(
+            diagnostics["fallbackAttempted"]
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "primaryRawHoughLineCount"
+            ],
+            1,
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "fallbackRawHoughLineCount"
+            ],
+            0,
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "acceptedCandidateCount"
+            ],
+            1,
+        )
+
+    @patch(
+        "app.club_detector.cv2.HoughLinesP"
+    )
+    def test_fallback_pass_recovers_shorter_candidate(
+        self,
+        mock_hough_lines: Any,
+    ) -> None:
+        mock_hough_lines.side_effect = [
+            None,
+            np.array(
+                [
+                    [
+                        [
+                            100,
+                            100,
+                            165,
+                            165,
+                        ]
+                    ]
+                ],
+                dtype=np.int32,
+            ),
+        ]
+
+        frame = np.zeros(
+            (800, 1000, 3),
+            dtype=np.uint8,
+        )
+
+        diagnostics = create_candidate_diagnostics()
+
+        candidates = detect_shaft_candidates(
+            frame,
+            hand_anchor={
+                "x": 100.0,
+                "y": 100.0,
+            },
+            search_region=(
+                create_test_search_region()
+            ),
+            diagnostics=diagnostics,
+        )
+
+        self.assertEqual(
+            mock_hough_lines.call_count,
+            2,
+        )
+
+        self.assertEqual(
+            len(candidates),
+            1,
+        )
+
+        self.assertEqual(
+            diagnostics["detectionPass"],
+            "rectangular_fallback",
+        )
+
+        self.assertTrue(
+            diagnostics["fallbackAttempted"]
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "primaryRawHoughLineCount"
+            ],
+            0,
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "fallbackRawHoughLineCount"
+            ],
+            1,
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "acceptedCandidateCount"
+            ],
+            1,
+        )
+
+        self.assertLess(
+            candidates[0]["lengthRatio"],
+            0.08,
+        )
+
+        self.assertGreaterEqual(
+            candidates[0]["lengthRatio"],
+            0.04,
+        )
+
+    @patch(
+        "app.club_detector.cv2.HoughLinesP"
+    )
+    def test_fallback_runs_when_primary_lines_are_rejected(
+        self,
+        mock_hough_lines: Any,
+    ) -> None:
+        mock_hough_lines.side_effect = [
+            np.array(
+                [
+                    [
+                        [
+                            700,
+                            500,
+                            950,
+                            700,
+                        ]
+                    ]
+                ],
+                dtype=np.int32,
+            ),
+            np.array(
+                [
+                    [
+                        [
+                            100,
+                            100,
+                            165,
+                            165,
+                        ]
+                    ]
+                ],
+                dtype=np.int32,
+            ),
+        ]
+
+        frame = np.zeros(
+            (800, 1000, 3),
+            dtype=np.uint8,
+        )
+
+        diagnostics = create_candidate_diagnostics()
+
+        candidates = detect_shaft_candidates(
+            frame,
+            hand_anchor={
+                "x": 100.0,
+                "y": 100.0,
+            },
+            search_region=(
+                create_test_search_region()
+            ),
+            diagnostics=diagnostics,
+        )
+
+        self.assertEqual(
+            mock_hough_lines.call_count,
+            2,
+        )
+
+        self.assertEqual(
+            len(candidates),
+            1,
+        )
+
+        self.assertEqual(
+            diagnostics["detectionPass"],
+            "rectangular_fallback",
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "primaryRawHoughLineCount"
+            ],
+            1,
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "fallbackRawHoughLineCount"
+            ],
+            1,
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "rejectedTooFarFromHands"
+            ],
+            1,
+        )
+
+    @patch(
+        "app.club_detector.cv2.HoughLinesP"
+    )
+    def test_no_candidate_when_both_hough_passes_fail(
+        self,
+        mock_hough_lines: Any,
+    ) -> None:
+        mock_hough_lines.side_effect = [
+            None,
+            None,
+        ]
+
+        frame = np.zeros(
+            (800, 1000, 3),
+            dtype=np.uint8,
+        )
+
+        diagnostics = create_candidate_diagnostics()
+
+        candidates = detect_shaft_candidates(
+            frame,
+            hand_anchor={
+                "x": 100.0,
+                "y": 100.0,
+            },
+            search_region=(
+                create_test_search_region()
+            ),
+            diagnostics=diagnostics,
+        )
+
+        self.assertEqual(
+            mock_hough_lines.call_count,
+            2,
+        )
+
+        self.assertEqual(
+            candidates,
+            [],
+        )
+
+        self.assertEqual(
+            diagnostics["detectionPass"],
+            "none",
+        )
+
+        self.assertTrue(
+            diagnostics["fallbackAttempted"]
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "primaryRawHoughLineCount"
+            ],
+            0,
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "fallbackRawHoughLineCount"
+            ],
+            0,
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "acceptedCandidateCount"
+            ],
+            0,
+        )
+
+
     def test_candidate_rejects_short_line(
         self,
     ) -> None:
@@ -584,6 +964,334 @@ class ClubDetectorTests(
             "phases object",
         ):
             get_reference_phases({})
+
+    
+    def test_temporal_candidate_evaluation_prefers_small_angle_change(
+        self,
+    ) -> None:
+        previous_hand_anchor = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        previous_candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=500,
+            end_y=300,
+            hand_anchor=previous_hand_anchor,
+        )
+
+        current_hand_anchor = {
+            "x": 110.0,
+            "y": 105.0,
+        }
+
+        current_candidate = create_test_candidate(
+            start_x=110,
+            start_y=105,
+            end_x=510,
+            end_y=320,
+            hand_anchor=current_hand_anchor,
+        )
+
+        evaluation = (
+            calculate_temporal_candidate_evaluation(
+                current_candidate,
+                current_hand_anchor=(
+                    current_hand_anchor
+                ),
+                previous_shaft_line=(
+                    previous_candidate["line"]
+                ),
+                previous_hand_anchor=(
+                    previous_hand_anchor
+                ),
+                frame_width=1000,
+                frame_height=800,
+            )
+        )
+
+        self.assertTrue(
+            evaluation["accepted"]
+        )
+
+        self.assertLess(
+            evaluation["angleChangeDegrees"],
+            10.0,
+        )
+
+        self.assertGreater(
+            evaluation["temporalScore"],
+            0.6,
+        )
+
+    def test_temporal_selection_can_override_highest_image_candidate(
+        self,
+    ) -> None:
+        previous_hand_anchor = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        previous_candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=500,
+            end_y=300,
+            hand_anchor=previous_hand_anchor,
+        )
+
+        current_hand_anchor = {
+            "x": 105.0,
+            "y": 105.0,
+        }
+
+        wrong_candidate = create_test_candidate(
+            start_x=105,
+            start_y=105,
+            end_x=105,
+            end_y=500,
+            hand_anchor=current_hand_anchor,
+        )
+
+        correct_candidate = create_test_candidate(
+            start_x=105,
+            start_y=105,
+            end_x=505,
+            end_y=315,
+            hand_anchor=current_hand_anchor,
+        )
+
+        wrong_candidate["score"] = 0.95
+        correct_candidate["score"] = 0.72
+
+        diagnostics = create_candidate_diagnostics()
+
+        selected = select_shaft_candidate(
+            [
+                wrong_candidate,
+                correct_candidate,
+            ],
+            current_hand_anchor=current_hand_anchor,
+            previous_shaft_line=(
+                previous_candidate["line"]
+            ),
+            previous_hand_anchor=(
+                previous_hand_anchor
+            ),
+            frame_width=1000,
+            frame_height=800,
+            diagnostics=diagnostics,
+        )
+
+        self.assertIs(
+            selected,
+            correct_candidate,
+        )
+
+        self.assertEqual(
+            diagnostics["temporalSelectionMode"],
+            "temporal",
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "temporalCandidatesEvaluated"
+            ],
+            2,
+        )
+
+        candidate_records = diagnostics[
+            "candidateEvaluations"
+        ]
+
+        self.assertEqual(len(candidate_records), 2)
+        self.assertFalse(candidate_records[0]["selected"])
+        self.assertTrue(candidate_records[0]["accepted"])
+        self.assertTrue(candidate_records[1]["selected"])
+        self.assertTrue(candidate_records[1]["accepted"])
+        self.assertEqual(candidate_records[0]["index"], 0)
+        self.assertEqual(candidate_records[1]["index"], 1)
+
+    def test_temporal_selection_rejects_all_implausible_candidates(
+        self,
+    ) -> None:
+        previous_hand_anchor = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        previous_candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=500,
+            end_y=100,
+            hand_anchor=previous_hand_anchor,
+        )
+
+        current_hand_anchor = {
+            "x": 105.0,
+            "y": 105.0,
+        }
+
+        implausible_candidate = create_test_candidate(
+            start_x=105,
+            start_y=105,
+            end_x=105,
+            end_y=500,
+            hand_anchor=current_hand_anchor,
+        )
+
+        diagnostics = create_candidate_diagnostics()
+
+        selected = select_shaft_candidate(
+            [implausible_candidate],
+            current_hand_anchor=current_hand_anchor,
+            previous_shaft_line=(
+                previous_candidate["line"]
+            ),
+            previous_hand_anchor=(
+                previous_hand_anchor
+            ),
+            frame_width=1000,
+            frame_height=800,
+            diagnostics=diagnostics,
+        )
+
+        self.assertIsNone(selected)
+
+        self.assertEqual(
+            diagnostics["temporalSelectionMode"],
+            "rejected",
+        )
+
+        self.assertEqual(
+            diagnostics[
+                "temporalCandidatesRejected"
+            ],
+            1,
+        )
+
+        candidate_records = diagnostics[
+            "candidateEvaluations"
+        ]
+
+        self.assertEqual(len(candidate_records), 1)
+        self.assertFalse(candidate_records[0]["accepted"])
+        self.assertFalse(candidate_records[0]["selected"])
+        self.assertIn(
+            "angle_change_exceeds_threshold",
+            candidate_records[0]["rejectionReasons"],
+        )
+
+    def test_first_temporal_selection_uses_image_score(
+        self,
+    ) -> None:
+        hand_anchor = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        lower_candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=400,
+            end_y=250,
+            hand_anchor=hand_anchor,
+        )
+
+        higher_candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=500,
+            end_y=300,
+            hand_anchor=hand_anchor,
+        )
+
+        lower_candidate["score"] = 0.60
+        higher_candidate["score"] = 0.85
+
+        diagnostics = create_candidate_diagnostics()
+
+        selected = select_shaft_candidate(
+            [
+                higher_candidate,
+                lower_candidate,
+            ],
+            current_hand_anchor=hand_anchor,
+            previous_shaft_line=None,
+            previous_hand_anchor=None,
+            frame_width=1000,
+            frame_height=800,
+            diagnostics=diagnostics,
+        )
+
+        self.assertIs(
+            selected,
+            higher_candidate,
+        )
+
+        self.assertEqual(
+            diagnostics["temporalSelectionMode"],
+            "image_only",
+        )
+
+        self.assertEqual(
+            diagnostics["selectedTemporalScore"],
+            0.85,
+        )
+
+        candidate_records = diagnostics[
+            "candidateEvaluations"
+        ]
+
+        self.assertEqual(len(candidate_records), 2)
+        self.assertTrue(candidate_records[0]["selected"])
+        self.assertTrue(candidate_records[0]["accepted"])
+        self.assertIsNone(
+            candidate_records[0]["temporalScore"]
+        )
+        self.assertFalse(candidate_records[1]["selected"])
+        self.assertEqual(
+            candidate_records[1]["rejectionReasons"],
+            [],
+        )
+
+    def test_candidate_diagnostic_builder_records_score_rejection(
+        self,
+    ) -> None:
+        hand_anchor = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=500,
+            end_y=300,
+            hand_anchor=hand_anchor,
+        )
+
+        record = build_candidate_evaluation_diagnostics(
+            candidate,
+            index=3,
+            temporal_score=0.40,
+            angle_change_degrees=20.0,
+            distal_shift_ratio=0.12,
+            accepted=False,
+            selected=False,
+        )
+
+        self.assertEqual(record["index"], 3)
+        self.assertEqual(record["line"], candidate["line"])
+        self.assertEqual(record["imageScore"], candidate["score"])
+        self.assertEqual(
+            record["rejectionReasons"],
+            ["temporal_score_below_minimum"],
+        )
+
 
     def test_axial_angle_change_handles_reversed_line_direction(
         self,

@@ -23,6 +23,7 @@ from app.club_visualizer import (
 )
 from app.club_search_region import (
     SearchRegion,
+    build_pose_guided_corridor_mask,
     build_pose_guided_search_region,
     crop_frame_to_search_region,
     translate_coordinates_to_full_frame,
@@ -42,17 +43,39 @@ REFERENCE_PHASES = (
 )
 
 MINIMUM_WRIST_VISIBILITY = 0.35
-MINIMUM_LINE_LENGTH_RATIO = 0.08
+
+PRIMARY_MINIMUM_LINE_LENGTH_RATIO = 0.08
+FALLBACK_MINIMUM_LINE_LENGTH_RATIO = 0.04
+
+MINIMUM_LINE_LENGTH_RATIO = (
+    PRIMARY_MINIMUM_LINE_LENGTH_RATIO
+)
+
 MAXIMUM_LINE_LENGTH_RATIO = 0.55
 MAXIMUM_HAND_DISTANCE_RATIO = 0.22
 MAXIMUM_GRIP_ENDPOINT_DISTANCE_RATIO = 0.12
 
 CANNY_LOW_THRESHOLD = 50
 CANNY_HIGH_THRESHOLD = 150
-HOUGH_THRESHOLD = 24
+
+PRIMARY_HOUGH_THRESHOLD = 24
+FALLBACK_HOUGH_THRESHOLD = 18
+
+HOUGH_THRESHOLD = PRIMARY_HOUGH_THRESHOLD
 HOUGH_MAX_LINE_GAP = 18
 
+MERGE_MAXIMUM_ANGLE_CHANGE_DEGREES = 10.0
+MERGE_MAXIMUM_PERPENDICULAR_DISTANCE_RATIO = 0.012
+MERGE_MAXIMUM_ENDPOINT_GAP_RATIO = 0.045
+
 MAXIMUM_REFERENCE_ANGLE_CHANGE_DEGREES = 75.0
+MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES = 65.0
+MAXIMUM_TEMPORAL_DISTAL_SHIFT_RATIO = 0.30
+MINIMUM_TEMPORAL_SELECTION_SCORE = 0.48
+
+TEMPORAL_IMAGE_SCORE_WEIGHT = 0.55
+TEMPORAL_ANGLE_SCORE_WEIGHT = 0.30
+TEMPORAL_DISTAL_SCORE_WEIGHT = 0.15
 
 
 class PixelPoint(TypedDict):
@@ -77,18 +100,75 @@ class ShaftCandidate(TypedDict):
     score: float
 
 
+class CandidateEvaluationDiagnostics(TypedDict):
+    index: int
+    line: ShaftLine
+    imageScore: float
+    temporalScore: float | None
+    angleChangeDegrees: float | None
+    distalShiftRatio: float | None
+    accepted: bool
+    selected: bool
+    rejectionReasons: list[str]
+
+
 class CandidateDiagnostics(TypedDict):
     croppedFrameEmpty: bool
     edgePixelCount: int
+
+    corridorMaskAvailable: bool
+    corridorMaskPixelCount: int
+    corridorEdgePixelCount: int
+
+    detectionPass: str
+    fallbackAttempted: bool
+
     minimumLineLengthPixels: int
     rawHoughLineCount: int
+    mergedHoughLineCount: int
+    segmentMergeCount: int
+
+    primaryMinimumLineLengthPixels: int
+    primaryRawHoughLineCount: int
+    primaryMergedHoughLineCount: int
+
+    fallbackMinimumLineLengthPixels: int
+    fallbackRawHoughLineCount: int
+    fallbackMergedHoughLineCount: int
+
+    corridorPrimaryRawHoughLineCount: int
+    corridorPrimaryMergedHoughLineCount: int
+    corridorFallbackRawHoughLineCount: int
+    corridorFallbackMergedHoughLineCount: int
+    rectangularPrimaryRawHoughLineCount: int
+    rectangularPrimaryMergedHoughLineCount: int
+    rectangularFallbackRawHoughLineCount: int
+    rectangularFallbackMergedHoughLineCount: int
+
     rejectedInvalidCoordinates: int
     rejectedInvalidFrameDimensions: int
     rejectedTooShort: int
     rejectedTooLong: int
     rejectedTooFarFromHands: int
     rejectedGripEndpointTooFar: int
+
     acceptedCandidateCount: int
+    temporalReferenceAvailable: bool
+    temporalCandidatesEvaluated: int
+    temporalCandidatesRejected: int
+    temporalSelectionMode: str
+    selectedTemporalScore: float | None
+    selectedAngleChangeDegrees: float | None
+    selectedDistalShiftRatio: float | None
+    candidateEvaluations: list[CandidateEvaluationDiagnostics]
+
+
+class TemporalCandidateEvaluation(TypedDict):
+    candidate: ShaftCandidate
+    temporalScore: float
+    angleChangeDegrees: float
+    distalShiftRatio: float
+    accepted: bool
 
 
 class TemporalComparison(TypedDict):
@@ -408,6 +488,7 @@ def distance_from_point_to_segment(
         point["y"] - closest_y,
     )
 
+
 def calculate_nearest_endpoint_distance(
     point: PixelPoint,
     start: PixelPoint,
@@ -433,15 +514,52 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
     return {
         "croppedFrameEmpty": False,
         "edgePixelCount": 0,
+
+        "corridorMaskAvailable": False,
+        "corridorMaskPixelCount": 0,
+        "corridorEdgePixelCount": 0,
+
+        "detectionPass": "none",
+        "fallbackAttempted": False,
+
         "minimumLineLengthPixels": 0,
         "rawHoughLineCount": 0,
+        "mergedHoughLineCount": 0,
+        "segmentMergeCount": 0,
+
+        "primaryMinimumLineLengthPixels": 0,
+        "primaryRawHoughLineCount": 0,
+        "primaryMergedHoughLineCount": 0,
+
+        "fallbackMinimumLineLengthPixels": 0,
+        "fallbackRawHoughLineCount": 0,
+        "fallbackMergedHoughLineCount": 0,
+
+        "corridorPrimaryRawHoughLineCount": 0,
+        "corridorPrimaryMergedHoughLineCount": 0,
+        "corridorFallbackRawHoughLineCount": 0,
+        "corridorFallbackMergedHoughLineCount": 0,
+        "rectangularPrimaryRawHoughLineCount": 0,
+        "rectangularPrimaryMergedHoughLineCount": 0,
+        "rectangularFallbackRawHoughLineCount": 0,
+        "rectangularFallbackMergedHoughLineCount": 0,
+
         "rejectedInvalidCoordinates": 0,
         "rejectedInvalidFrameDimensions": 0,
         "rejectedTooShort": 0,
         "rejectedTooLong": 0,
         "rejectedTooFarFromHands": 0,
         "rejectedGripEndpointTooFar": 0,
+
         "acceptedCandidateCount": 0,
+        "temporalReferenceAvailable": False,
+        "temporalCandidatesEvaluated": 0,
+        "temporalCandidatesRejected": 0,
+        "temporalSelectionMode": "not_attempted",
+        "selectedTemporalScore": None,
+        "selectedAngleChangeDegrees": None,
+        "selectedDistalShiftRatio": None,
+        "candidateEvaluations": [],
     }
 
 
@@ -451,6 +569,9 @@ def evaluate_shaft_candidate(
     hand_anchor: PixelPoint,
     frame_width: int,
     frame_height: int,
+    minimum_length_ratio: float = (
+        MINIMUM_LINE_LENGTH_RATIO
+    ),
 ) -> tuple[ShaftCandidate | None, str | None]:
     if len(coordinates) != 4:
         return None, "invalid_coordinates"
@@ -483,7 +604,7 @@ def evaluate_shaft_candidate(
 
     length_ratio = length_pixels / diagonal
 
-    if length_ratio < MINIMUM_LINE_LENGTH_RATIO:
+    if length_ratio < minimum_length_ratio:
         return None, "too_short"
 
     if length_ratio > MAXIMUM_LINE_LENGTH_RATIO:
@@ -641,16 +762,409 @@ def record_candidate_rejection(
         diagnostics[key] += 1
 
 
+def sort_shaft_candidates(
+    candidates: Sequence[ShaftCandidate],
+) -> list[ShaftCandidate]:
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate["score"],
+            candidate["line"]["lengthPixels"],
+        ),
+        reverse=True,
+    )
+
+
+
+def _coordinates_to_points(
+    coordinates: Sequence[int],
+) -> tuple[PixelPoint, PixelPoint]:
+    if len(coordinates) != 4:
+        raise ValueError(
+            "A shaft segment must contain exactly "
+            "four coordinates."
+        )
+
+    return (
+        {
+            "x": float(coordinates[0]),
+            "y": float(coordinates[1]),
+        },
+        {
+            "x": float(coordinates[2]),
+            "y": float(coordinates[3]),
+        },
+    )
+
+
+def _point_to_infinite_line_distance(
+    point: PixelPoint,
+    line_start: PixelPoint,
+    line_end: PixelPoint,
+) -> float:
+    line_x = line_end["x"] - line_start["x"]
+    line_y = line_end["y"] - line_start["y"]
+    line_length = math.hypot(line_x, line_y)
+
+    if line_length <= 0.0:
+        return calculate_line_length(
+            point,
+            line_start,
+        )
+
+    return abs(
+        line_y * point["x"]
+        - line_x * point["y"]
+        + line_end["x"] * line_start["y"]
+        - line_end["y"] * line_start["x"]
+    ) / line_length
+
+
+def _minimum_endpoint_gap(
+    first_start: PixelPoint,
+    first_end: PixelPoint,
+    second_start: PixelPoint,
+    second_end: PixelPoint,
+) -> float:
+    return min(
+        calculate_line_length(first_start, second_start),
+        calculate_line_length(first_start, second_end),
+        calculate_line_length(first_end, second_start),
+        calculate_line_length(first_end, second_end),
+    )
+
+
+def _segments_are_mergeable(
+    first_coordinates: Sequence[int],
+    second_coordinates: Sequence[int],
+    *,
+    frame_diagonal: float,
+) -> bool:
+    if frame_diagonal <= 0.0:
+        return False
+
+    first_start, first_end = _coordinates_to_points(
+        first_coordinates
+    )
+    second_start, second_end = _coordinates_to_points(
+        second_coordinates
+    )
+
+    angle_change = calculate_axial_angle_change(
+        calculate_line_angle(first_start, first_end),
+        calculate_line_angle(second_start, second_end),
+    )
+
+    if angle_change > MERGE_MAXIMUM_ANGLE_CHANGE_DEGREES:
+        return False
+
+    maximum_perpendicular_distance = (
+        frame_diagonal
+        * MERGE_MAXIMUM_PERPENDICULAR_DISTANCE_RATIO
+    )
+
+    perpendicular_distance = min(
+        max(
+            _point_to_infinite_line_distance(
+                second_start,
+                first_start,
+                first_end,
+            ),
+            _point_to_infinite_line_distance(
+                second_end,
+                first_start,
+                first_end,
+            ),
+        ),
+        max(
+            _point_to_infinite_line_distance(
+                first_start,
+                second_start,
+                second_end,
+            ),
+            _point_to_infinite_line_distance(
+                first_end,
+                second_start,
+                second_end,
+            ),
+        ),
+    )
+
+    if perpendicular_distance > maximum_perpendicular_distance:
+        return False
+
+    endpoint_gap = _minimum_endpoint_gap(
+        first_start,
+        first_end,
+        second_start,
+        second_end,
+    )
+
+    return endpoint_gap <= (
+        frame_diagonal
+        * MERGE_MAXIMUM_ENDPOINT_GAP_RATIO
+    )
+
+
+def _merge_segment_group(
+    segment_group: Sequence[Sequence[int]],
+) -> list[int]:
+    if not segment_group:
+        raise ValueError(
+            "Cannot merge an empty segment group."
+        )
+
+    points: list[PixelPoint] = []
+
+    for coordinates in segment_group:
+        start, end = _coordinates_to_points(
+            coordinates
+        )
+        points.extend((start, end))
+
+    reference_start, reference_end = (
+        _coordinates_to_points(segment_group[0])
+    )
+
+    direction_x = (
+        reference_end["x"] - reference_start["x"]
+    )
+    direction_y = (
+        reference_end["y"] - reference_start["y"]
+    )
+    direction_length = math.hypot(
+        direction_x,
+        direction_y,
+    )
+
+    if direction_length <= 0.0:
+        return [
+            int(round(reference_start["x"])),
+            int(round(reference_start["y"])),
+            int(round(reference_end["x"])),
+            int(round(reference_end["y"])),
+        ]
+
+    unit_x = direction_x / direction_length
+    unit_y = direction_y / direction_length
+
+    projections = [
+        (
+            (
+                point["x"] - reference_start["x"]
+            ) * unit_x
+            + (
+                point["y"] - reference_start["y"]
+            ) * unit_y
+        )
+        for point in points
+    ]
+
+    minimum_projection = min(projections)
+    maximum_projection = max(projections)
+
+    return [
+        int(round(
+            reference_start["x"]
+            + minimum_projection * unit_x
+        )),
+        int(round(
+            reference_start["y"]
+            + minimum_projection * unit_y
+        )),
+        int(round(
+            reference_start["x"]
+            + maximum_projection * unit_x
+        )),
+        int(round(
+            reference_start["y"]
+            + maximum_projection * unit_y
+        )),
+    ]
+
+
+def merge_collinear_segments(
+    coordinates: Sequence[Sequence[int]],
+    *,
+    frame_width: int,
+    frame_height: int,
+) -> list[list[int]]:
+    if not coordinates:
+        return []
+
+    frame_diagonal = math.hypot(
+        frame_width,
+        frame_height,
+    )
+
+    groups: list[list[list[int]]] = []
+
+    for segment in coordinates:
+        normalized_segment = [
+            int(value)
+            for value in segment
+        ]
+
+        for group in groups:
+            if _segments_are_mergeable(
+                _merge_segment_group(group),
+                normalized_segment,
+                frame_diagonal=frame_diagonal,
+            ):
+                group.append(normalized_segment)
+                break
+        else:
+            groups.append([normalized_segment])
+
+    return [
+        _merge_segment_group(group)
+        for group in groups
+    ]
+
+
+def update_merged_hough_diagnostics(
+    diagnostics: CandidateDiagnostics,
+) -> None:
+    diagnostics[
+        "primaryMergedHoughLineCount"
+    ] = (
+        diagnostics[
+            "corridorPrimaryMergedHoughLineCount"
+        ]
+        + diagnostics[
+            "rectangularPrimaryMergedHoughLineCount"
+        ]
+    )
+
+    diagnostics[
+        "fallbackMergedHoughLineCount"
+    ] = (
+        diagnostics[
+            "corridorFallbackMergedHoughLineCount"
+        ]
+        + diagnostics[
+            "rectangularFallbackMergedHoughLineCount"
+        ]
+    )
+
+    diagnostics[
+        "mergedHoughLineCount"
+    ] = (
+        diagnostics[
+            "primaryMergedHoughLineCount"
+        ]
+        + diagnostics[
+            "fallbackMergedHoughLineCount"
+        ]
+    )
+
+
+def run_hough_candidate_pass(
+    edges: np.ndarray,
+    *,
+    hand_anchor: PixelPoint,
+    search_region: SearchRegion,
+    frame_width: int,
+    frame_height: int,
+    minimum_line_length_pixels: int,
+    minimum_candidate_length_ratio: float,
+    hough_threshold: int,
+    diagnostics: CandidateDiagnostics,
+    raw_count_key: str,
+    merged_count_key: str,
+) -> list[ShaftCandidate]:
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=hough_threshold,
+        minLineLength=minimum_line_length_pixels,
+        maxLineGap=HOUGH_MAX_LINE_GAP,
+    )
+
+    if lines is None:
+        diagnostics[raw_count_key] = 0
+        diagnostics[merged_count_key] = 0
+        update_merged_hough_diagnostics(
+            diagnostics
+        )
+        return []
+
+    diagnostics[raw_count_key] = len(lines)
+
+    full_frame_coordinates = [
+        translate_coordinates_to_full_frame(
+            np.asarray(line).reshape(-1).tolist(),
+            search_region=search_region,
+        )
+        for line in lines
+    ]
+
+    merged_coordinates = merge_collinear_segments(
+        full_frame_coordinates,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
+
+    diagnostics[merged_count_key] = len(
+        merged_coordinates
+    )
+
+    update_merged_hough_diagnostics(
+        diagnostics
+    )
+
+    diagnostics["segmentMergeCount"] += max(
+        0,
+        len(full_frame_coordinates)
+        - len(merged_coordinates),
+    )
+
+    candidates: list[ShaftCandidate] = []
+
+    for coordinates in merged_coordinates:
+        candidate, rejection_reason = (
+            evaluate_shaft_candidate(
+                coordinates,
+                hand_anchor=hand_anchor,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                minimum_length_ratio=(
+                    minimum_candidate_length_ratio
+                ),
+            )
+        )
+
+        if candidate is not None:
+            candidates.append(candidate)
+        else:
+            record_candidate_rejection(
+                diagnostics,
+                rejection_reason,
+            )
+
+    return sort_shaft_candidates(candidates)
+
+
 def detect_shaft_candidates(
     frame: np.ndarray,
     *,
     hand_anchor: PixelPoint,
     search_region: SearchRegion,
+    corridor_mask: np.ndarray | None = None,
     diagnostics: CandidateDiagnostics | None = None,
 ) -> list[ShaftCandidate]:
-    frame_height, frame_width = (
-        frame.shape[:2]
-    )
+    """
+    Generate shaft candidates using geometry-guided and broad passes.
+
+    When a valid directional corridor is available, Hough detection
+    first searches only edges inside that corridor. The broader
+    rectangular pose-guided crop remains a fallback because forearm
+    direction and shaft direction can diverge during wrist hinge,
+    transition, impact, and release.
+    """
+
+    frame_height, frame_width = frame.shape[:2]
 
     active_diagnostics = (
         diagnostics
@@ -658,17 +1172,16 @@ def detect_shaft_candidates(
         else create_candidate_diagnostics()
     )
 
-    cropped_frame = (
-        crop_frame_to_search_region(
-            frame,
-            search_region,
-        )
+    cropped_frame = crop_frame_to_search_region(
+        frame,
+        search_region,
     )
 
     if cropped_frame.size == 0:
         active_diagnostics[
             "croppedFrameEmpty"
         ] = True
+
         return []
 
     grayscale = cv2.cvtColor(
@@ -697,81 +1210,327 @@ def detect_shaft_candidates(
         frame_height,
     )
 
-    minimum_line_length = max(
+    primary_minimum_line_length = max(
         20,
         int(
             full_frame_diagonal
-            * MINIMUM_LINE_LENGTH_RATIO
+            * PRIMARY_MINIMUM_LINE_LENGTH_RATIO
         ),
+    )
+
+    fallback_minimum_line_length = max(
+        20,
+        int(
+            full_frame_diagonal
+            * FALLBACK_MINIMUM_LINE_LENGTH_RATIO
+        ),
+    )
+
+    active_diagnostics[
+        "primaryMinimumLineLengthPixels"
+    ] = primary_minimum_line_length
+
+    active_diagnostics[
+        "fallbackMinimumLineLengthPixels"
+    ] = fallback_minimum_line_length
+
+    valid_corridor_mask = (
+        corridor_mask is not None
+        and corridor_mask.shape == edges.shape
+        and corridor_mask.dtype == np.uint8
+        and bool(np.any(corridor_mask))
+    )
+
+    if valid_corridor_mask:
+        assert corridor_mask is not None
+
+        active_diagnostics[
+            "corridorMaskAvailable"
+        ] = True
+
+        active_diagnostics[
+            "corridorMaskPixelCount"
+        ] = int(np.count_nonzero(corridor_mask))
+
+        corridor_edges = cv2.bitwise_and(
+            edges,
+            edges,
+            mask=corridor_mask,
+        )
+
+        active_diagnostics[
+            "corridorEdgePixelCount"
+        ] = int(np.count_nonzero(corridor_edges))
+
+        corridor_primary_candidates = (
+            run_hough_candidate_pass(
+                corridor_edges,
+                hand_anchor=hand_anchor,
+                search_region=search_region,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                minimum_line_length_pixels=(
+                    primary_minimum_line_length
+                ),
+                minimum_candidate_length_ratio=(
+                    PRIMARY_MINIMUM_LINE_LENGTH_RATIO
+                ),
+                hough_threshold=(
+                    PRIMARY_HOUGH_THRESHOLD
+                ),
+                diagnostics=active_diagnostics,
+                raw_count_key=(
+                    "corridorPrimaryRawHoughLineCount"
+                ),
+                merged_count_key=(
+                    "corridorPrimaryMergedHoughLineCount"
+                ),
+            )
+        )
+
+        if corridor_primary_candidates:
+            active_diagnostics[
+                "detectionPass"
+            ] = "corridor_primary"
+
+            active_diagnostics[
+                "minimumLineLengthPixels"
+            ] = primary_minimum_line_length
+
+            active_diagnostics[
+                "primaryRawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorPrimaryRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "rawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorPrimaryRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "acceptedCandidateCount"
+            ] = len(corridor_primary_candidates)
+
+            return corridor_primary_candidates
+
+        active_diagnostics[
+            "fallbackAttempted"
+        ] = True
+
+        corridor_fallback_candidates = (
+            run_hough_candidate_pass(
+                corridor_edges,
+                hand_anchor=hand_anchor,
+                search_region=search_region,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                minimum_line_length_pixels=(
+                    fallback_minimum_line_length
+                ),
+                minimum_candidate_length_ratio=(
+                    FALLBACK_MINIMUM_LINE_LENGTH_RATIO
+                ),
+                hough_threshold=(
+                    FALLBACK_HOUGH_THRESHOLD
+                ),
+                diagnostics=active_diagnostics,
+                raw_count_key=(
+                    "corridorFallbackRawHoughLineCount"
+                ),
+                merged_count_key=(
+                    "corridorFallbackMergedHoughLineCount"
+                ),
+            )
+        )
+
+        if corridor_fallback_candidates:
+            active_diagnostics[
+                "detectionPass"
+            ] = "corridor_fallback"
+
+            active_diagnostics[
+                "minimumLineLengthPixels"
+            ] = fallback_minimum_line_length
+
+            active_diagnostics[
+                "primaryRawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorPrimaryRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "fallbackRawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorFallbackRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "rawHoughLineCount"
+            ] = (
+                active_diagnostics[
+                    "corridorPrimaryRawHoughLineCount"
+                ]
+                + active_diagnostics[
+                    "corridorFallbackRawHoughLineCount"
+                ]
+            )
+
+            active_diagnostics[
+                "acceptedCandidateCount"
+            ] = len(corridor_fallback_candidates)
+
+            return corridor_fallback_candidates
+
+    rectangular_primary_candidates = (
+        run_hough_candidate_pass(
+            edges,
+            hand_anchor=hand_anchor,
+            search_region=search_region,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            minimum_line_length_pixels=(
+                primary_minimum_line_length
+            ),
+            minimum_candidate_length_ratio=(
+                PRIMARY_MINIMUM_LINE_LENGTH_RATIO
+            ),
+            hough_threshold=(
+                PRIMARY_HOUGH_THRESHOLD
+            ),
+            diagnostics=active_diagnostics,
+            raw_count_key=(
+                "rectangularPrimaryRawHoughLineCount"
+            ),
+            merged_count_key=(
+                "rectangularPrimaryMergedHoughLineCount"
+            ),
+        )
+    )
+
+    active_diagnostics[
+        "primaryRawHoughLineCount"
+    ] = (
+        active_diagnostics[
+            "corridorPrimaryRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "rectangularPrimaryRawHoughLineCount"
+        ]
+    )
+
+    if rectangular_primary_candidates:
+        active_diagnostics[
+            "detectionPass"
+        ] = "rectangular_primary"
+
+        active_diagnostics[
+            "minimumLineLengthPixels"
+        ] = primary_minimum_line_length
+
+        active_diagnostics[
+            "rawHoughLineCount"
+        ] = (
+            active_diagnostics[
+                "corridorPrimaryRawHoughLineCount"
+            ]
+            + active_diagnostics[
+                "corridorFallbackRawHoughLineCount"
+            ]
+            + active_diagnostics[
+                "rectangularPrimaryRawHoughLineCount"
+            ]
+        )
+
+        active_diagnostics[
+            "acceptedCandidateCount"
+        ] = len(rectangular_primary_candidates)
+
+        return rectangular_primary_candidates
+
+    active_diagnostics[
+        "fallbackAttempted"
+    ] = True
+
+    rectangular_fallback_candidates = (
+        run_hough_candidate_pass(
+            edges,
+            hand_anchor=hand_anchor,
+            search_region=search_region,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            minimum_line_length_pixels=(
+                fallback_minimum_line_length
+            ),
+            minimum_candidate_length_ratio=(
+                FALLBACK_MINIMUM_LINE_LENGTH_RATIO
+            ),
+            hough_threshold=(
+                FALLBACK_HOUGH_THRESHOLD
+            ),
+            diagnostics=active_diagnostics,
+            raw_count_key=(
+                "rectangularFallbackRawHoughLineCount"
+            ),
+            merged_count_key=(
+                "rectangularFallbackMergedHoughLineCount"
+            ),
+        )
+    )
+
+    active_diagnostics[
+        "fallbackRawHoughLineCount"
+    ] = (
+        active_diagnostics[
+            "corridorFallbackRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "rectangularFallbackRawHoughLineCount"
+        ]
+    )
+
+    active_diagnostics[
+        "rawHoughLineCount"
+    ] = (
+        active_diagnostics[
+            "corridorPrimaryRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "corridorFallbackRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "rectangularPrimaryRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "rectangularFallbackRawHoughLineCount"
+        ]
     )
 
     active_diagnostics[
         "minimumLineLengthPixels"
-    ] = minimum_line_length
+    ] = fallback_minimum_line_length
 
-    lines = cv2.HoughLinesP(
-        edges,
-        rho=1,
-        theta=np.pi / 180,
-        threshold=HOUGH_THRESHOLD,
-        minLineLength=minimum_line_length,
-        maxLineGap=HOUGH_MAX_LINE_GAP,
-    )
+    if rectangular_fallback_candidates:
+        active_diagnostics[
+            "detectionPass"
+        ] = "rectangular_fallback"
 
-    if lines is None:
-        return []
+        active_diagnostics[
+            "acceptedCandidateCount"
+        ] = len(rectangular_fallback_candidates)
+
+        return rectangular_fallback_candidates
 
     active_diagnostics[
-        "rawHoughLineCount"
-    ] = len(lines)
-
-    candidates: list[ShaftCandidate] = []
-
-    for line in lines:
-        local_coordinates = (
-            np.asarray(line)
-            .reshape(-1)
-            .tolist()
-        )
-
-        coordinates = (
-            translate_coordinates_to_full_frame(
-                local_coordinates,
-                search_region=search_region,
-            )
-        )
-
-        candidate, rejection_reason = (
-            evaluate_shaft_candidate(
-                coordinates,
-                hand_anchor=hand_anchor,
-                frame_width=frame_width,
-                frame_height=frame_height,
-            )
-        )
-
-        if candidate is not None:
-            candidates.append(candidate)
-        else:
-            record_candidate_rejection(
-                active_diagnostics,
-                rejection_reason,
-            )
+        "detectionPass"
+    ] = "none"
 
     active_diagnostics[
         "acceptedCandidateCount"
-    ] = len(candidates)
+    ] = 0
 
-    return sorted(
-        candidates,
-        key=lambda candidate: (
-            candidate["score"],
-            candidate["line"][
-                "lengthPixels"
-            ],
-        ),
-        reverse=True,
-    )
+    return []
 
 
 def create_pose_frame_lookup(
@@ -852,14 +1611,6 @@ def calculate_axial_angle_change(
     first_angle: float,
     second_angle: float,
 ) -> float:
-    """
-    Return the smallest difference between two undirected line
-    angles.
-
-    Shaft lines are axes rather than directional vectors, so angles
-    separated by 180 degrees describe the same physical line.
-    """
-
     difference = abs(
         second_angle - first_angle
     ) % 180.0
@@ -870,18 +1621,365 @@ def calculate_axial_angle_change(
     return difference
 
 
+def get_grip_and_distal_endpoints(
+    shaft_line: ShaftLine,
+    hand_anchor: PixelPoint,
+) -> tuple[PixelPoint, PixelPoint]:
+    start = shaft_line["start"]
+    end = shaft_line["end"]
+
+    start_distance = math.hypot(
+        hand_anchor["x"] - start["x"],
+        hand_anchor["y"] - start["y"],
+    )
+
+    end_distance = math.hypot(
+        hand_anchor["x"] - end["x"],
+        hand_anchor["y"] - end["y"],
+    )
+
+    if start_distance <= end_distance:
+        return start, end
+
+    return end, start
+
+
+def calculate_temporal_candidate_evaluation(
+    candidate: ShaftCandidate,
+    *,
+    current_hand_anchor: PixelPoint,
+    previous_shaft_line: ShaftLine,
+    previous_hand_anchor: PixelPoint,
+    frame_width: int,
+    frame_height: int,
+) -> TemporalCandidateEvaluation:
+    diagonal = math.hypot(
+        frame_width,
+        frame_height,
+    )
+
+    if diagonal <= 0.0:
+        return {
+            "candidate": candidate,
+            "temporalScore": 0.0,
+            "angleChangeDegrees": 90.0,
+            "distalShiftRatio": 1.0,
+            "accepted": False,
+        }
+
+    _, current_distal_endpoint = (
+        get_grip_and_distal_endpoints(
+            candidate["line"],
+            current_hand_anchor,
+        )
+    )
+
+    _, previous_distal_endpoint = (
+        get_grip_and_distal_endpoints(
+            previous_shaft_line,
+            previous_hand_anchor,
+        )
+    )
+
+    angle_change = calculate_axial_angle_change(
+        previous_shaft_line["angleDegrees"],
+        candidate["line"]["angleDegrees"],
+    )
+
+    distal_shift_pixels = math.hypot(
+        current_distal_endpoint["x"]
+        - previous_distal_endpoint["x"],
+        current_distal_endpoint["y"]
+        - previous_distal_endpoint["y"],
+    )
+
+    distal_shift_ratio = (
+        distal_shift_pixels / diagonal
+    )
+
+    angle_score = max(
+        0.0,
+        1.0 - (
+            angle_change
+            / MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES
+        ),
+    )
+
+    distal_score = max(
+        0.0,
+        1.0 - (
+            distal_shift_ratio
+            / MAXIMUM_TEMPORAL_DISTAL_SHIFT_RATIO
+        ),
+    )
+
+    temporal_score = (
+        TEMPORAL_IMAGE_SCORE_WEIGHT
+        * candidate["score"]
+        + TEMPORAL_ANGLE_SCORE_WEIGHT
+        * angle_score
+        + TEMPORAL_DISTAL_SCORE_WEIGHT
+        * distal_score
+    )
+
+    accepted = (
+        angle_change
+        <= MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES
+        and temporal_score
+        >= MINIMUM_TEMPORAL_SELECTION_SCORE
+    )
+
+    return {
+        "candidate": candidate,
+        "temporalScore": round(
+            temporal_score,
+            6,
+        ),
+        "angleChangeDegrees": round(
+            angle_change,
+            3,
+        ),
+        "distalShiftRatio": round(
+            distal_shift_ratio,
+            6,
+        ),
+        "accepted": accepted,
+    }
+
+
+def build_candidate_evaluation_diagnostics(
+    candidate: ShaftCandidate,
+    *,
+    index: int,
+    temporal_score: float | None,
+    angle_change_degrees: float | None,
+    distal_shift_ratio: float | None,
+    accepted: bool,
+    selected: bool,
+) -> CandidateEvaluationDiagnostics:
+    rejection_reasons: list[str] = []
+
+    if not accepted:
+        if (
+            angle_change_degrees is not None
+            and angle_change_degrees
+            > MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES
+        ):
+            rejection_reasons.append(
+                "angle_change_exceeds_threshold"
+            )
+
+        if (
+            temporal_score is not None
+            and temporal_score
+            < MINIMUM_TEMPORAL_SELECTION_SCORE
+        ):
+            rejection_reasons.append(
+                "temporal_score_below_minimum"
+            )
+
+        if not rejection_reasons:
+            rejection_reasons.append(
+                "temporal_candidate_rejected"
+            )
+
+    return {
+        "index": index,
+        "line": candidate["line"],
+        "imageScore": candidate["score"],
+        "temporalScore": temporal_score,
+        "angleChangeDegrees": (
+            angle_change_degrees
+        ),
+        "distalShiftRatio": distal_shift_ratio,
+        "accepted": accepted,
+        "selected": selected,
+        "rejectionReasons": rejection_reasons,
+    }
+
+
+def select_shaft_candidate(
+    candidates: Sequence[ShaftCandidate],
+    *,
+    current_hand_anchor: PixelPoint,
+    previous_shaft_line: ShaftLine | None,
+    previous_hand_anchor: PixelPoint | None,
+    frame_width: int,
+    frame_height: int,
+    diagnostics: CandidateDiagnostics,
+) -> ShaftCandidate | None:
+    diagnostics["candidateEvaluations"] = []
+
+    if not candidates:
+        diagnostics[
+            "temporalSelectionMode"
+        ] = "no_candidates"
+
+        return None
+
+    if (
+        previous_shaft_line is None
+        or previous_hand_anchor is None
+    ):
+        selected = candidates[0]
+
+        diagnostics[
+            "temporalSelectionMode"
+        ] = "image_only"
+
+        diagnostics[
+            "selectedTemporalScore"
+        ] = selected["score"]
+
+        diagnostics["candidateEvaluations"] = [
+            build_candidate_evaluation_diagnostics(
+                candidate,
+                index=index,
+                temporal_score=None,
+                angle_change_degrees=None,
+                distal_shift_ratio=None,
+                accepted=True,
+                selected=(candidate is selected),
+            )
+            for index, candidate in enumerate(candidates)
+        ]
+
+        return selected
+
+    diagnostics[
+        "temporalReferenceAvailable"
+    ] = True
+
+    evaluations = [
+        calculate_temporal_candidate_evaluation(
+            candidate,
+            current_hand_anchor=(
+                current_hand_anchor
+            ),
+            previous_shaft_line=(
+                previous_shaft_line
+            ),
+            previous_hand_anchor=(
+                previous_hand_anchor
+            ),
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
+        for candidate in candidates
+    ]
+
+    diagnostics[
+        "temporalCandidatesEvaluated"
+    ] = len(evaluations)
+
+    accepted_evaluations = [
+        evaluation
+        for evaluation in evaluations
+        if evaluation["accepted"]
+    ]
+
+    diagnostics[
+        "temporalCandidatesRejected"
+    ] = (
+        len(evaluations)
+        - len(accepted_evaluations)
+    )
+
+    if not accepted_evaluations:
+        diagnostics[
+            "temporalSelectionMode"
+        ] = "rejected"
+
+        diagnostics["candidateEvaluations"] = [
+            build_candidate_evaluation_diagnostics(
+                evaluation["candidate"],
+                index=index,
+                temporal_score=(
+                    evaluation["temporalScore"]
+                ),
+                angle_change_degrees=(
+                    evaluation["angleChangeDegrees"]
+                ),
+                distal_shift_ratio=(
+                    evaluation["distalShiftRatio"]
+                ),
+                accepted=evaluation["accepted"],
+                selected=False,
+            )
+            for index, evaluation in enumerate(evaluations)
+        ]
+
+        return None
+
+    accepted_evaluations.sort(
+        key=lambda evaluation: (
+            evaluation["temporalScore"],
+            evaluation["candidate"]["score"],
+            evaluation["candidate"][
+                "line"
+            ]["lengthPixels"],
+        ),
+        reverse=True,
+    )
+
+    selected_evaluation = (
+        accepted_evaluations[0]
+    )
+
+    diagnostics[
+        "temporalSelectionMode"
+    ] = "temporal"
+
+    diagnostics[
+        "selectedTemporalScore"
+    ] = selected_evaluation[
+        "temporalScore"
+    ]
+
+    diagnostics[
+        "selectedAngleChangeDegrees"
+    ] = selected_evaluation[
+        "angleChangeDegrees"
+    ]
+
+    diagnostics[
+        "selectedDistalShiftRatio"
+    ] = selected_evaluation[
+        "distalShiftRatio"
+    ]
+
+    selected_candidate = selected_evaluation[
+        "candidate"
+    ]
+
+    diagnostics["candidateEvaluations"] = [
+        build_candidate_evaluation_diagnostics(
+            evaluation["candidate"],
+            index=index,
+            temporal_score=(
+                evaluation["temporalScore"]
+            ),
+            angle_change_degrees=(
+                evaluation["angleChangeDegrees"]
+            ),
+            distal_shift_ratio=(
+                evaluation["distalShiftRatio"]
+            ),
+            accepted=evaluation["accepted"],
+            selected=(
+                evaluation["candidate"]
+                is selected_candidate
+            ),
+        )
+        for index, evaluation in enumerate(evaluations)
+    ]
+
+    return selected_candidate
+
+
 def apply_temporal_consistency_validation(
     frame_results: list[ClubFrameDetection],
 ) -> None:
-    """
-    Compare successful club detections in chronological order.
-
-    Dense neighboring frames normally produce gradual shaft-angle
-    changes. Large changes are retained and marked for review rather
-    than rejected or replaced so downstream tracking can inspect the
-    original detection evidence.
-    """
-
     previous_detection: ClubFrameDetection | None = None
 
     for frame_result in frame_results:
@@ -1081,6 +2179,14 @@ def analyze_club_detection(
         ClubFrameDetection
     ] = []
 
+    previous_trusted_shaft_line: (
+        ShaftLine | None
+    ) = None
+
+    previous_trusted_hand_anchor: (
+        PixelPoint | None
+    ) = None
+
     try:
         for frame_request in frame_requests:
             phase_name = frame_request[
@@ -1118,9 +2224,7 @@ def analyze_club_detection(
                         "referenceFrameIndex": (
                             reference_frame_index
                         ),
-                        "frameIndex": (
-                            frame_index
-                        ),
+                        "frameIndex": frame_index,
                         "phaseOffsetFrames": (
                             phase_offset_frames
                         ),
@@ -1140,6 +2244,8 @@ def analyze_club_detection(
                             "club-tracking frame."
                         ),
                         "debugImagePath": None,
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
                 continue
@@ -1157,16 +2263,10 @@ def analyze_club_detection(
                 else None
             )
 
-            hand_anchor = (
-                calculate_hand_anchor(
-                    pose_frame,
-                    frame_width=(
-                        rotated_width
-                    ),
-                    frame_height=(
-                        rotated_height
-                    ),
-                )
+            hand_anchor = calculate_hand_anchor(
+                pose_frame,
+                frame_width=rotated_width,
+                frame_height=rotated_height,
             )
 
             if hand_anchor is None:
@@ -1176,9 +2276,7 @@ def analyze_club_detection(
                         "referenceFrameIndex": (
                             reference_frame_index
                         ),
-                        "frameIndex": (
-                            frame_index
-                        ),
+                        "frameIndex": frame_index,
                         "phaseOffsetFrames": (
                             phase_offset_frames
                         ),
@@ -1200,6 +2298,8 @@ def analyze_club_detection(
                             "available."
                         ),
                         "debugImagePath": None,
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
                 continue
@@ -1216,9 +2316,7 @@ def analyze_club_detection(
                         "referenceFrameIndex": (
                             reference_frame_index
                         ),
-                        "frameIndex": (
-                            frame_index
-                        ),
+                        "frameIndex": frame_index,
                         "phaseOffsetFrames": (
                             phase_offset_frames
                         ),
@@ -1239,6 +2337,8 @@ def analyze_club_detection(
                             "video frame could not be read."
                         ),
                         "debugImagePath": None,
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
                 continue
@@ -1257,6 +2357,18 @@ def analyze_club_detection(
                 )
             )
 
+            corridor_mask = (
+                build_pose_guided_corridor_mask(
+                    pose_frame,
+                    search_region=search_region,
+                    hand_anchor=hand_anchor,
+                    frame_width=rotated_width,
+                    frame_height=rotated_height,
+                )
+                if search_region is not None
+                else None
+            )
+
             candidate_diagnostics = (
                 create_candidate_diagnostics()
                 if search_region is not None
@@ -1268,6 +2380,7 @@ def analyze_club_detection(
                     rotated_frame,
                     hand_anchor=hand_anchor,
                     search_region=search_region,
+                    corridor_mask=corridor_mask,
                     diagnostics=(
                         candidate_diagnostics
                     ),
@@ -1297,7 +2410,8 @@ def analyze_club_detection(
                     else (
                         "No reliable shaft-line "
                         "candidate was found inside "
-                        "the pose-guided search region."
+                        "the geometry-guided corridor "
+                        "or rectangular fallback region."
                     )
                 )
 
@@ -1307,7 +2421,7 @@ def analyze_club_detection(
                         phase_name=phase_name,
                         frame_index=frame_index,
                         hand_anchor=hand_anchor,
-                        search_region=search_region,                       
+                        search_region=search_region,
                         shaft_line=None,
                         confidence=0.0,
                         candidate_count=0,
@@ -1332,9 +2446,7 @@ def analyze_club_detection(
                         "referenceFrameIndex": (
                             reference_frame_index
                         ),
-                        "frameIndex": (
-                            frame_index
-                        ),
+                        "frameIndex": frame_index,
                         "phaseOffsetFrames": (
                             phase_offset_frames
                         ),
@@ -1352,25 +2464,132 @@ def analyze_club_detection(
                         "candidateDiagnostics": (
                             candidate_diagnostics
                         ),
-                        "failureReason": (
-                            failure_reason
-                        ),
+                        "failureReason": failure_reason,
                         "debugImagePath": str(
                             debug_image_path
                         ),
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
                     }
                 )
 
                 continue
 
-            best_candidate = candidates[0]
+            assert candidate_diagnostics is not None
+
+            best_candidate = select_shaft_candidate(
+                candidates,
+                current_hand_anchor=hand_anchor,
+                previous_shaft_line=(
+                    previous_trusted_shaft_line
+                ),
+                previous_hand_anchor=(
+                    previous_trusted_hand_anchor
+                ),
+                frame_width=rotated_width,
+                frame_height=rotated_height,
+                diagnostics=candidate_diagnostics,
+            )
+
+            if best_candidate is None:
+                failure_reason = (
+                    "Shaft candidates were found, but "
+                    "none were temporally believable "
+                    "relative to the previous trusted "
+                    "club detection."
+                )
+
+                visualization = (
+                    draw_club_detection_visualization(
+                        rotated_frame,
+                        phase_name=phase_name,
+                        frame_index=frame_index,
+                        hand_anchor=hand_anchor,
+                        search_region=search_region,
+                        shaft_line=None,
+                        confidence=0.0,
+                        candidate_count=len(candidates),
+                        candidate_diagnostics=(
+                            candidate_diagnostics
+                        ),
+                        detected=False,
+                        failure_reason=(
+                            failure_reason
+                        ),
+                    )
+                )
+
+                save_club_detection_visualization(
+                    debug_image_path,
+                    visualization,
+                )
+
+                frame_results.append(
+                    {
+                        "phase": phase_name,
+                        "referenceFrameIndex": (
+                            reference_frame_index
+                        ),
+                        "frameIndex": frame_index,
+                        "phaseOffsetFrames": (
+                            phase_offset_frames
+                        ),
+                        "isReferenceFrame": (
+                            is_reference_frame
+                        ),
+                        "timestampSeconds": (
+                            timestamp_seconds
+                        ),
+                        "detected": False,
+                        "confidence": 0.0,
+                        "handAnchor": {
+                            "x": round(
+                                hand_anchor["x"],
+                                3,
+                            ),
+                            "y": round(
+                                hand_anchor["y"],
+                                3,
+                            ),
+                        },
+                        "shaftLine": None,
+                        "candidateCount": len(candidates),
+                        "candidateDiagnostics": (
+                            candidate_diagnostics
+                        ),
+                        "failureReason": failure_reason,
+                        "debugImagePath": str(
+                            debug_image_path
+                        ),
+                        "temporalStatus": "pending",
+                        "temporalComparison": None,
+                    }
+                )
+
+                continue
 
             confidence = round(
-                best_candidate["score"],
+                (
+                    candidate_diagnostics[
+                        "selectedTemporalScore"
+                    ]
+                    if candidate_diagnostics[
+                        "selectedTemporalScore"
+                    ]
+                    is not None
+                    else best_candidate["score"]
+                ),
                 3,
             )
 
             shaft_line = best_candidate["line"]
+
+            previous_trusted_shaft_line = shaft_line
+
+            previous_trusted_hand_anchor = {
+                "x": hand_anchor["x"],
+                "y": hand_anchor["y"],
+            }
 
             visualization = (
                 draw_club_detection_visualization(
@@ -1381,9 +2600,7 @@ def analyze_club_detection(
                     search_region=search_region,
                     shaft_line=shaft_line,
                     confidence=confidence,
-                    candidate_count=len(
-                        candidates
-                    ),
+                    candidate_count=len(candidates),
                     candidate_diagnostics=(
                         candidate_diagnostics
                     ),
@@ -1426,9 +2643,7 @@ def analyze_club_detection(
                         ),
                     },
                     "shaftLine": shaft_line,
-                    "candidateCount": len(
-                        candidates
-                    ),
+                    "candidateCount": len(candidates),
                     "candidateDiagnostics": (
                         candidate_diagnostics
                     ),
@@ -1436,6 +2651,8 @@ def analyze_club_detection(
                     "debugImagePath": str(
                         debug_image_path
                     ),
+                    "temporalStatus": "pending",
+                    "temporalComparison": None,
                 }
             )
     finally:
@@ -1521,11 +2738,14 @@ def analyze_club_detection(
                 "rotated-video-pixels"
             ),
             "candidateSearch": (
-                "Canny edge detection and the "
-                "probabilistic Hough transform run "
-                "inside an adaptive pose-guided "
-                "region extending from the golfer's "
-                "forearms through the detected hands."
+                "Canny edge detection and a dual-pass "
+                "probabilistic Hough transform first run "
+                "inside a rotated geometry-guided corridor "
+                "estimated from the golfer's forearms and "
+                "hands. If the focused corridor produces no "
+                "accepted candidates, the same primary and "
+                "short-line fallback passes run across the "
+                "broader pose-guided rectangular region."
             ),
             "referenceFrameSource": (
                 "golf-phase-refiner"
@@ -1545,11 +2765,14 @@ def analyze_club_detection(
                 "for review rather than rejected."
             ),
             "candidateDiagnostics": (
-                "Each processed search region records edge "
-                "density, raw Hough line count, accepted "
-                "candidate count, and rejection totals for "
-                "invalid coordinates, length, hand distance, "
-                "and grip-endpoint distance."
+                "Each processed search region records full "
+                "and corridor edge density, per-pass raw "
+                "and merged Hough line counts, segment merge "
+                "totals, accepted candidate "
+                "count, image-filter rejection totals, and "
+                "a serializable record for every candidate "
+                "evaluated during image-only or temporal "
+                "selection."
             ),
             "visualizations": (
                 "Debug images show the selected "
@@ -1563,6 +2786,13 @@ def analyze_club_detection(
                     "Line detection does not "
                     "identify the club model or "
                     "club type."
+                ),
+                (
+                    "Forearm direction is only an estimate "
+                    "of shaft direction. Wrist hinge and "
+                    "release can cause the shaft to diverge "
+                    "from the focused corridor, so a broader "
+                    "rectangular fallback remains necessary."
                 ),
                 (
                     "Body edges, clothing, shadows, "
@@ -1588,12 +2818,8 @@ def analyze_club_detection(
             "requestedFrames": len(
                 frame_requests
             ),
-            "processedFrames": (
-                processed_count
-            ),
-            "detectedFrames": (
-                detected_count
-            ),
+            "processedFrames": processed_count,
+            "detectedFrames": detected_count,
             "undetectedFrames": (
                 processed_count
                 - detected_count
@@ -1611,9 +2837,7 @@ def analyze_club_detection(
                 average_confidence,
                 3,
             ),
-            "selectedRotation": (
-                selected_rotation
-            ),
+            "selectedRotation": selected_rotation,
             "visualizationCount": len(
                 visualized_results
             ),
