@@ -5,6 +5,10 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
+from app.analysis.api_contract import (
+    ANALYSIS_API_VERSION,
+    build_analysis_api_contract,
+)
 from app.club_detector import (
     analyze_club_detection,
 )
@@ -243,35 +247,50 @@ def run_analysis_pipeline(
         golf_metrics_path
     )
 
+    artifacts = {
+        "poseTimelinePath": str(
+            pose_timeline_path
+        ),
+        "motionAnalysisPath": str(
+            motion_analysis_path
+        ),
+        "geometryAnalysisPath": str(
+            geometry_analysis_path
+        ),
+        "refinedPhasesPath": str(
+            refined_phases_path
+        ),
+        "clubDetectionPath": str(
+            club_detection_path
+        ),
+        "clubVisualizationDirectory": str(
+            club_visualization_directory
+        ),
+        "golfMetricsPath": str(
+            golf_metrics_path
+        ),
+    }
+
+    analysis_contract = (
+        build_analysis_api_contract(
+            report=final_report,
+            video_path=str(
+                resolved_video_path
+            ),
+            handedness=handedness,
+            artifacts=artifacts,
+        )
+    )
+
     return {
         "success": True,
+        "apiVersion": ANALYSIS_API_VERSION,
         "videoPath": str(
             resolved_video_path
         ),
         "handedness": handedness,
-        "artifacts": {
-            "poseTimelinePath": str(
-                pose_timeline_path
-            ),
-            "motionAnalysisPath": str(
-                motion_analysis_path
-            ),
-            "geometryAnalysisPath": str(
-                geometry_analysis_path
-            ),
-            "refinedPhasesPath": str(
-                refined_phases_path
-            ),
-            "clubDetectionPath": str(
-                club_detection_path
-            ),
-            "clubVisualizationDirectory": str(
-                club_visualization_directory
-            ),
-            "golfMetricsPath": str(
-                golf_metrics_path
-            ),
-        },
+        "analysis": analysis_contract,
+        "artifacts": artifacts,
         "stageSummaries": {
             "poseDetection": pose_result[
                 "poseDetection"
