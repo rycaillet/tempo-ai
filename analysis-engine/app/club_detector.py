@@ -86,6 +86,13 @@ TEMPORAL_IMAGE_SCORE_WEIGHT = 0.55
 TEMPORAL_ANGLE_SCORE_WEIGHT = 0.30
 TEMPORAL_DISTAL_SCORE_WEIGHT = 0.15
 
+CONFIDENCE_IMAGE_SCORE_WEIGHT = 0.45
+CONFIDENCE_TEMPORAL_SCORE_WEIGHT = 0.25
+CONFIDENCE_ANGLE_CONTINUITY_WEIGHT = 0.20
+CONFIDENCE_DISTAL_CONTINUITY_WEIGHT = 0.10
+CONFIDENCE_IMAGE_ONLY_NEUTRAL_WEIGHT = 0.05
+CONFIDENCE_NEUTRAL_EVIDENCE_SCORE = 0.50
+
 PROVENANCE_CORRIDOR_PRIMARY_ADJUSTMENT = 0.03
 PROVENANCE_CORRIDOR_FALLBACK_ADJUSTMENT = 0.015
 PROVENANCE_ENHANCED_PRIMARY_ADJUSTMENT = -0.01
@@ -200,6 +207,12 @@ class CandidateDiagnostics(TypedDict):
     selectedTemporalScore: float | None
     selectedAngleChangeDegrees: float | None
     selectedDistalShiftRatio: float | None
+    selectedCalibratedConfidence: float | None
+    selectedConfidenceMode: str
+    selectedImageConfidence: float | None
+    selectedTemporalConfidence: float | None
+    selectedAngleContinuityConfidence: float | None
+    selectedDistalContinuityConfidence: float | None
     candidateEvaluations: list[CandidateEvaluationDiagnostics]
 
 
@@ -608,6 +621,12 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
         "selectedTemporalScore": None,
         "selectedAngleChangeDegrees": None,
         "selectedDistalShiftRatio": None,
+        "selectedCalibratedConfidence": None,
+        "selectedConfidenceMode": "not_calibrated",
+        "selectedImageConfidence": None,
+        "selectedTemporalConfidence": None,
+        "selectedAngleContinuityConfidence": None,
+        "selectedDistalContinuityConfidence": None,
         "candidateEvaluations": [],
     }
 
@@ -2488,6 +2507,94 @@ def select_shaft_candidate(
     return selected_candidate
 
 
+
+def clamp_confidence(value: float) -> float:
+    return min(1.0, max(0.0, value))
+
+
+def calculate_selected_candidate_confidence(
+    candidate: ShaftCandidate,
+    *,
+    diagnostics: CandidateDiagnostics,
+) -> float:
+    """Calibrate reported confidence without changing selection."""
+
+    image_confidence = clamp_confidence(candidate["score"])
+
+    diagnostics["selectedImageConfidence"] = round(
+        image_confidence,
+        6,
+    )
+
+    temporal_score = diagnostics["selectedTemporalScore"]
+    angle_change = diagnostics["selectedAngleChangeDegrees"]
+    distal_shift = diagnostics["selectedDistalShiftRatio"]
+
+    if (
+        diagnostics["temporalSelectionMode"] != "temporal"
+        or temporal_score is None
+        or angle_change is None
+        or distal_shift is None
+    ):
+        confidence = (
+            (1.0 - CONFIDENCE_IMAGE_ONLY_NEUTRAL_WEIGHT)
+            * image_confidence
+            + CONFIDENCE_IMAGE_ONLY_NEUTRAL_WEIGHT
+            * CONFIDENCE_NEUTRAL_EVIDENCE_SCORE
+        )
+
+        diagnostics["selectedConfidenceMode"] = "image_only"
+        diagnostics["selectedTemporalConfidence"] = None
+        diagnostics["selectedAngleContinuityConfidence"] = None
+        diagnostics["selectedDistalContinuityConfidence"] = None
+    else:
+        temporal_confidence = clamp_confidence(temporal_score)
+        angle_continuity = clamp_confidence(
+            1.0
+            - angle_change
+            / MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES
+        )
+        distal_continuity = clamp_confidence(
+            1.0
+            - distal_shift
+            / MAXIMUM_TEMPORAL_DISTAL_SHIFT_RATIO
+        )
+
+        confidence = (
+            CONFIDENCE_IMAGE_SCORE_WEIGHT * image_confidence
+            + CONFIDENCE_TEMPORAL_SCORE_WEIGHT
+            * temporal_confidence
+            + CONFIDENCE_ANGLE_CONTINUITY_WEIGHT
+            * angle_continuity
+            + CONFIDENCE_DISTAL_CONTINUITY_WEIGHT
+            * distal_continuity
+        )
+
+        diagnostics["selectedConfidenceMode"] = "temporal"
+        diagnostics["selectedTemporalConfidence"] = round(
+            temporal_confidence,
+            6,
+        )
+        diagnostics["selectedAngleContinuityConfidence"] = round(
+            angle_continuity,
+            6,
+        )
+        diagnostics["selectedDistalContinuityConfidence"] = round(
+            distal_continuity,
+            6,
+        )
+
+    calibrated_confidence = round(
+        clamp_confidence(confidence),
+        6,
+    )
+
+    diagnostics["selectedCalibratedConfidence"] = (
+        calibrated_confidence
+    )
+
+    return calibrated_confidence
+
 def apply_temporal_consistency_validation(
     frame_results: list[ClubFrameDetection],
 ) -> None:
@@ -3080,15 +3187,9 @@ def analyze_club_detection(
                 continue
 
             confidence = round(
-                (
-                    candidate_diagnostics[
-                        "selectedTemporalScore"
-                    ]
-                    if candidate_diagnostics[
-                        "selectedTemporalScore"
-                    ]
-                    is not None
-                    else best_candidate["score"]
+                calculate_selected_candidate_confidence(
+                    best_candidate,
+                    diagnostics=candidate_diagnostics,
                 ),
                 3,
             )
