@@ -10,6 +10,7 @@ from app.metrics.shaft_lean import (
     classify_camera_relative_lean,
     get_phase_detection,
     orient_shaft_line,
+    select_metric_shaft_line,
 )
 
 
@@ -20,6 +21,8 @@ def create_impact_detection(
     hand_anchor: dict[str, float] | None = None,
     shaft_start: dict[str, float] | None = None,
     shaft_end: dict[str, float] | None = None,
+    smoothed_shaft_start: dict[str, float] | None = None,
+    smoothed_shaft_end: dict[str, float] | None = None,
     failure_reason: str | None = None,
 ) -> dict[str, Any]:
     return {
@@ -58,6 +61,20 @@ def create_impact_detection(
                 "angleDegrees": 105.0,
             }
             if detected
+            else None
+        ),
+        "smoothedShaftLine": (
+            {
+                "start": smoothed_shaft_start,
+                "end": smoothed_shaft_end,
+                "lengthPixels": 80.0,
+                "angleDegrees": 90.0,
+            }
+            if (
+                detected
+                and smoothed_shaft_start is not None
+                and smoothed_shaft_end is not None
+            )
             else None
         ),
         "candidateCount": 3 if detected else 0,
@@ -340,6 +357,45 @@ class ShaftLeanTests(unittest.TestCase):
             "vertical",
         )
 
+    def test_select_metric_shaft_line_prefers_smoothed(
+        self,
+    ) -> None:
+        impact = create_impact_detection(
+            smoothed_shaft_start={
+                "x": 100.0,
+                "y": 100.0,
+            },
+            smoothed_shaft_end={
+                "x": 100.0,
+                "y": 180.0,
+            },
+        )
+
+        shaft_line, source = (
+            select_metric_shaft_line(impact)
+        )
+
+        self.assertIs(
+            shaft_line,
+            impact["smoothedShaftLine"],
+        )
+        self.assertEqual(source, "smoothed")
+
+    def test_select_metric_shaft_line_falls_back_to_raw(
+        self,
+    ) -> None:
+        impact = create_impact_detection()
+
+        shaft_line, source = (
+            select_metric_shaft_line(impact)
+        )
+
+        self.assertIs(
+            shaft_line,
+            impact["shaftLine"],
+        )
+        self.assertEqual(source, "raw")
+
     def test_builds_available_shaft_lean_metrics(
         self,
     ) -> None:
@@ -382,6 +438,51 @@ class ShaftLeanTests(unittest.TestCase):
         self.assertGreater(
             result["confidence"],
             0.0,
+        )
+        self.assertEqual(
+            result["measurements"][
+                "shaftGeometrySource"
+            ],
+            "raw",
+        )
+
+    def test_builds_available_metrics_from_smoothed_geometry(
+        self,
+    ) -> None:
+        result = build_shaft_lean_metrics(
+            {
+                "frames": [
+                    create_impact_detection(
+                        smoothed_shaft_start={
+                            "x": 100.0,
+                            "y": 100.0,
+                        },
+                        smoothed_shaft_end={
+                            "x": 100.0,
+                            "y": 180.0,
+                        },
+                    ),
+                ],
+            }
+        )
+
+        self.assertEqual(
+            result["measurements"][
+                "shaftGeometrySource"
+            ],
+            "smoothed",
+        )
+        self.assertEqual(
+            result["measurements"][
+                "signedLeanFromVerticalDegrees"
+            ],
+            0.0,
+        )
+        self.assertEqual(
+            result["measurements"][
+                "cameraRelativeDirection"
+            ],
+            "vertical",
         )
 
     def test_builds_incomplete_result_when_impact_missing(
