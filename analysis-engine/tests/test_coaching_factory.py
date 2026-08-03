@@ -52,6 +52,8 @@ class CoachingProviderFactoryTests(
             provider_name="openai",
             openai_model="test-model",
             openai_api_key="test-key",
+            openai_timeout_seconds=45.0,
+            openai_max_retries=3,
         )
 
         provider = build_coaching_provider(settings)
@@ -66,6 +68,8 @@ class CoachingProviderFactoryTests(
         )
         openai_class.assert_called_once_with(
             api_key="test-key",
+            timeout=45.0,
+            max_retries=3,
         )
 
     def test_rejects_missing_openai_key(

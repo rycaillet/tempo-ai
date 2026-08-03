@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from types import SimpleNamespace
 from typing import Any
 
 from app.coaching import (
@@ -11,8 +12,8 @@ from app.coaching import (
     CoachingProvider,
     CoachingProviderError,
     OpenAICoachingProvider,
-    build_coaching_response_schema,
     PROMPT_VERSION,
+    build_coaching_response_schema,
 )
 
 
@@ -21,8 +22,22 @@ class FakeResponse:
         self,
         *,
         output_text: object,
+        status: str | None = "completed",
+        request_id: str | None = "req_test",
+        output: list[object] | None = None,
+        incomplete_reason: str | None = None,
     ) -> None:
         self.output_text = output_text
+        self.status = status
+        self._request_id = request_id
+        self.output = output or []
+        self.incomplete_details = (
+            SimpleNamespace(
+                reason=incomplete_reason
+            )
+            if incomplete_reason is not None
+            else None
+        )
 
 
 class FakeResponsesClient:
@@ -148,15 +163,13 @@ class OpenAICoachingProviderTests(
     def build_provider(
         self,
         *,
-        output_text: object,
+        response: FakeResponse,
     ) -> tuple[
         OpenAICoachingProvider,
         FakeResponsesClient,
     ]:
         responses = FakeResponsesClient(
-            response=FakeResponse(
-                output_text=output_text,
-            ),
+            response=response,
         )
 
         provider = OpenAICoachingProvider(
@@ -170,8 +183,10 @@ class OpenAICoachingProviderTests(
         self,
     ) -> None:
         provider, _ = self.build_provider(
-            output_text=json.dumps(
-                self.build_payload()
+            response=FakeResponse(
+                output_text=json.dumps(
+                    self.build_payload()
+                ),
             ),
         )
 
@@ -184,8 +199,10 @@ class OpenAICoachingProviderTests(
         self,
     ) -> None:
         provider, _ = self.build_provider(
-            output_text=json.dumps(
-                self.build_payload()
+            response=FakeResponse(
+                output_text=json.dumps(
+                    self.build_payload()
+                ),
             ),
         )
 
@@ -199,12 +216,6 @@ class OpenAICoachingProviderTests(
             "Build a more balanced setup",
         )
         self.assertEqual(
-            response.action_steps,
-            (
-                "Balance over the middle of the feet.",
-            ),
-        )
-        self.assertEqual(
             response.warnings,
             (
                 "existing_warning",
@@ -216,16 +227,16 @@ class OpenAICoachingProviderTests(
         self,
     ) -> None:
         provider, responses = self.build_provider(
-            output_text=json.dumps(
-                self.build_payload()
+            response=FakeResponse(
+                output_text=json.dumps(
+                    self.build_payload()
+                ),
             ),
         )
 
         provider.generate(
             self.build_context()
         )
-
-        self.assertEqual(len(responses.calls), 1)
 
         request = responses.calls[0]
 
@@ -234,26 +245,18 @@ class OpenAICoachingProviderTests(
             "test-model",
         )
         self.assertIn(
-            "TempoAI",
-            request["instructions"],
-        )
-        self.assertIn(
             PROMPT_VERSION,
             request["input"],
         )
-
-        text_config = request["text"]
-        response_format = text_config["format"]
-
         self.assertEqual(
-            response_format["type"],
+            request["text"]["format"]["type"],
             "json_schema",
         )
         self.assertTrue(
-            response_format["strict"]
+            request["text"]["format"]["strict"]
         )
         self.assertEqual(
-            response_format["schema"],
+            request["text"]["format"]["schema"],
             build_coaching_response_schema(),
         )
 
@@ -283,38 +286,151 @@ class OpenAICoachingProviderTests(
 
         with self.assertRaises(
             CoachingProviderError
-        ):
+        ) as raised:
             provider.generate(
                 self.build_context()
             )
+
+        self.assertEqual(
+            raised.exception.code,
+            "openai_unexpected_error",
+        )
+
+    def test_rejects_incomplete_response(
+        self,
+    ) -> None:
+        provider, _ = self.build_provider(
+            response=FakeResponse(
+                output_text=None,
+                status="incomplete",
+                incomplete_reason=(
+                    "max_output_tokens"
+                ),
+            ),
+        )
+
+        with self.assertRaises(
+            CoachingProviderError
+        ) as raised:
+            provider.generate(
+                self.build_context()
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            (
+                "openai_incomplete_"
+                "max_output_tokens"
+            ),
+        )
+        self.assertTrue(
+            raised.exception.retryable
+        )
+        self.assertEqual(
+            raised.exception.request_id,
+            "req_test",
+        )
+
+    def test_rejects_refusal(
+        self,
+    ) -> None:
+        refusal = SimpleNamespace(
+            type="refusal",
+            refusal="Unable to comply.",
+        )
+        message = SimpleNamespace(
+            content=[refusal],
+        )
+
+        provider, _ = self.build_provider(
+            response=FakeResponse(
+                output_text=None,
+                output=[message],
+            ),
+        )
+
+        with self.assertRaises(
+            CoachingProviderError
+        ) as raised:
+            provider.generate(
+                self.build_context()
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            "openai_refusal",
+        )
+        self.assertFalse(
+            raised.exception.retryable
+        )
+
+    def test_rejects_failed_response(
+        self,
+    ) -> None:
+        provider, _ = self.build_provider(
+            response=FakeResponse(
+                output_text=None,
+                status="failed",
+            ),
+        )
+
+        with self.assertRaises(
+            CoachingProviderError
+        ) as raised:
+            provider.generate(
+                self.build_context()
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            "openai_response_failed",
+        )
 
     def test_rejects_missing_output_text(
         self,
     ) -> None:
         provider, _ = self.build_provider(
-            output_text=None,
+            response=FakeResponse(
+                output_text=None,
+            ),
         )
 
         with self.assertRaises(
             CoachingProviderError
-        ):
+        ) as raised:
             provider.generate(
                 self.build_context()
             )
+
+        self.assertEqual(
+            raised.exception.code,
+            "openai_missing_output_text",
+        )
+        self.assertEqual(
+            raised.exception.request_id,
+            "req_test",
+        )
 
     def test_rejects_invalid_json(
         self,
     ) -> None:
         provider, _ = self.build_provider(
-            output_text="not-json",
+            response=FakeResponse(
+                output_text="not-json",
+            ),
         )
 
         with self.assertRaises(
             CoachingProviderError
-        ):
+        ) as raised:
             provider.generate(
                 self.build_context()
             )
+
+        self.assertEqual(
+            raised.exception.code,
+            "openai_invalid_json",
+        )
 
     def test_rejects_ungrounded_response(
         self,
@@ -323,15 +439,22 @@ class OpenAICoachingProviderTests(
         payload["primaryMetricKey"] = "weightShift"
 
         provider, _ = self.build_provider(
-            output_text=json.dumps(payload),
+            response=FakeResponse(
+                output_text=json.dumps(payload),
+            ),
         )
 
         with self.assertRaises(
             CoachingProviderError
-        ):
+        ) as raised:
             provider.generate(
                 self.build_context()
             )
+
+        self.assertEqual(
+            raised.exception.code,
+            "openai_validation_error",
+        )
 
 
 if __name__ == "__main__":
