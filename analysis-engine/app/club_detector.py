@@ -58,6 +58,15 @@ MAXIMUM_GRIP_ENDPOINT_DISTANCE_RATIO = 0.12
 CANNY_LOW_THRESHOLD = 50
 CANNY_HIGH_THRESHOLD = 150
 
+ADAPTIVE_CANNY_SIGMA = 0.33
+ADAPTIVE_CANNY_MINIMUM_LOW_THRESHOLD = 10
+ADAPTIVE_CANNY_MINIMUM_HIGH_THRESHOLD = 30
+ADAPTIVE_CANNY_MAXIMUM_HIGH_THRESHOLD = 220
+
+CLAHE_CLIP_LIMIT = 2.0
+CLAHE_TILE_GRID_SIZE = (8, 8)
+ENHANCED_EDGE_CLOSE_KERNEL_SIZE = 3
+
 PRIMARY_HOUGH_THRESHOLD = 24
 FALLBACK_HOUGH_THRESHOLD = 18
 
@@ -120,6 +129,11 @@ class CandidateDiagnostics(TypedDict):
     corridorMaskPixelCount: int
     corridorEdgePixelCount: int
 
+    enhancedEdgeAttempted: bool
+    enhancedEdgePixelCount: int
+    adaptiveCannyLowThreshold: int | None
+    adaptiveCannyHighThreshold: int | None
+
     detectionPass: str
     fallbackAttempted: bool
 
@@ -140,6 +154,10 @@ class CandidateDiagnostics(TypedDict):
     corridorPrimaryMergedHoughLineCount: int
     corridorFallbackRawHoughLineCount: int
     corridorFallbackMergedHoughLineCount: int
+    enhancedCorridorPrimaryRawHoughLineCount: int
+    enhancedCorridorPrimaryMergedHoughLineCount: int
+    enhancedCorridorFallbackRawHoughLineCount: int
+    enhancedCorridorFallbackMergedHoughLineCount: int
     rectangularPrimaryRawHoughLineCount: int
     rectangularPrimaryMergedHoughLineCount: int
     rectangularFallbackRawHoughLineCount: int
@@ -519,6 +537,11 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
         "corridorMaskPixelCount": 0,
         "corridorEdgePixelCount": 0,
 
+        "enhancedEdgeAttempted": False,
+        "enhancedEdgePixelCount": 0,
+        "adaptiveCannyLowThreshold": None,
+        "adaptiveCannyHighThreshold": None,
+
         "detectionPass": "none",
         "fallbackAttempted": False,
 
@@ -539,6 +562,10 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
         "corridorPrimaryMergedHoughLineCount": 0,
         "corridorFallbackRawHoughLineCount": 0,
         "corridorFallbackMergedHoughLineCount": 0,
+        "enhancedCorridorPrimaryRawHoughLineCount": 0,
+        "enhancedCorridorPrimaryMergedHoughLineCount": 0,
+        "enhancedCorridorFallbackRawHoughLineCount": 0,
+        "enhancedCorridorFallbackMergedHoughLineCount": 0,
         "rectangularPrimaryRawHoughLineCount": 0,
         "rectangularPrimaryMergedHoughLineCount": 0,
         "rectangularFallbackRawHoughLineCount": 0,
@@ -1022,6 +1049,139 @@ def merge_collinear_segments(
     ]
 
 
+def calculate_adaptive_canny_thresholds(
+    grayscale: np.ndarray,
+    *,
+    mask: np.ndarray | None = None,
+) -> tuple[int, int]:
+    """Derive stable Canny thresholds from local image intensity."""
+
+    if grayscale.size == 0:
+        return (
+            ADAPTIVE_CANNY_MINIMUM_LOW_THRESHOLD,
+            ADAPTIVE_CANNY_MINIMUM_HIGH_THRESHOLD,
+        )
+
+    if (
+        mask is not None
+        and mask.shape == grayscale.shape
+        and mask.dtype == np.uint8
+        and bool(np.any(mask))
+    ):
+        samples = grayscale[mask > 0]
+    else:
+        samples = grayscale.reshape(-1)
+
+    if samples.size == 0:
+        return (
+            ADAPTIVE_CANNY_MINIMUM_LOW_THRESHOLD,
+            ADAPTIVE_CANNY_MINIMUM_HIGH_THRESHOLD,
+        )
+
+    median_intensity = float(np.median(samples))
+
+    low_threshold = int(round(
+        (1.0 - ADAPTIVE_CANNY_SIGMA)
+        * median_intensity
+    ))
+    high_threshold = int(round(
+        (1.0 + ADAPTIVE_CANNY_SIGMA)
+        * median_intensity
+    ))
+
+    low_threshold = max(
+        ADAPTIVE_CANNY_MINIMUM_LOW_THRESHOLD,
+        min(254, low_threshold),
+    )
+    high_threshold = max(
+        ADAPTIVE_CANNY_MINIMUM_HIGH_THRESHOLD,
+        min(
+            ADAPTIVE_CANNY_MAXIMUM_HIGH_THRESHOLD,
+            high_threshold,
+        ),
+    )
+
+    if high_threshold <= low_threshold:
+        high_threshold = min(
+            ADAPTIVE_CANNY_MAXIMUM_HIGH_THRESHOLD,
+            low_threshold + 20,
+        )
+
+    if high_threshold <= low_threshold:
+        low_threshold = max(
+            ADAPTIVE_CANNY_MINIMUM_LOW_THRESHOLD,
+            high_threshold - 1,
+        )
+
+    return low_threshold, high_threshold
+
+
+def build_enhanced_corridor_edges(
+    grayscale: np.ndarray,
+    *,
+    corridor_mask: np.ndarray,
+) -> tuple[np.ndarray, int, int]:
+    """Recover weak, locally blended line evidence inside the corridor."""
+
+    clahe = cv2.createCLAHE(
+        clipLimit=CLAHE_CLIP_LIMIT,
+        tileGridSize=CLAHE_TILE_GRID_SIZE,
+    )
+
+    enhanced = clahe.apply(grayscale)
+
+    enhanced_blurred = cv2.GaussianBlur(
+        enhanced,
+        (3, 3),
+        0,
+    )
+
+    low_threshold, high_threshold = (
+        calculate_adaptive_canny_thresholds(
+            enhanced_blurred,
+            mask=corridor_mask,
+        )
+    )
+
+    enhanced_edges = cv2.Canny(
+        enhanced_blurred,
+        low_threshold,
+        high_threshold,
+    )
+
+    enhanced_edges = cv2.bitwise_and(
+        enhanced_edges,
+        enhanced_edges,
+        mask=corridor_mask,
+    )
+
+    closing_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT,
+        (
+            ENHANCED_EDGE_CLOSE_KERNEL_SIZE,
+            ENHANCED_EDGE_CLOSE_KERNEL_SIZE,
+        ),
+    )
+
+    enhanced_edges = cv2.morphologyEx(
+        enhanced_edges,
+        cv2.MORPH_CLOSE,
+        closing_kernel,
+    )
+
+    enhanced_edges = cv2.bitwise_and(
+        enhanced_edges,
+        enhanced_edges,
+        mask=corridor_mask,
+    )
+
+    return (
+        enhanced_edges,
+        low_threshold,
+        high_threshold,
+    )
+
+
 def update_merged_hough_diagnostics(
     diagnostics: CandidateDiagnostics,
 ) -> None:
@@ -1030,6 +1190,9 @@ def update_merged_hough_diagnostics(
     ] = (
         diagnostics[
             "corridorPrimaryMergedHoughLineCount"
+        ]
+        + diagnostics[
+            "enhancedCorridorPrimaryMergedHoughLineCount"
         ]
         + diagnostics[
             "rectangularPrimaryMergedHoughLineCount"
@@ -1041,6 +1204,9 @@ def update_merged_hough_diagnostics(
     ] = (
         diagnostics[
             "corridorFallbackMergedHoughLineCount"
+        ]
+        + diagnostics[
+            "enhancedCorridorFallbackMergedHoughLineCount"
         ]
         + diagnostics[
             "rectangularFallbackMergedHoughLineCount"
@@ -1158,10 +1324,12 @@ def detect_shaft_candidates(
     Generate shaft candidates using geometry-guided and broad passes.
 
     When a valid directional corridor is available, Hough detection
-    first searches only edges inside that corridor. The broader
-    rectangular pose-guided crop remains a fallback because forearm
-    direction and shaft direction can diverge during wrist hinge,
-    transition, impact, and release.
+    first searches standard edges inside that corridor. If both
+    standard corridor passes fail, a locally contrast-enhanced edge
+    map with adaptive Canny thresholds gets one focused recovery pass.
+    The broader rectangular pose-guided crop remains the final fallback
+    because forearm direction and shaft direction can diverge during
+    wrist hinge, transition, impact, and release.
     """
 
     frame_height, frame_width = frame.shape[:2]
@@ -1383,6 +1551,176 @@ def detect_shaft_candidates(
 
             return corridor_fallback_candidates
 
+        active_diagnostics[
+            "enhancedEdgeAttempted"
+        ] = True
+
+        (
+            enhanced_corridor_edges,
+            adaptive_low_threshold,
+            adaptive_high_threshold,
+        ) = build_enhanced_corridor_edges(
+            grayscale,
+            corridor_mask=corridor_mask,
+        )
+
+        active_diagnostics[
+            "adaptiveCannyLowThreshold"
+        ] = adaptive_low_threshold
+
+        active_diagnostics[
+            "adaptiveCannyHighThreshold"
+        ] = adaptive_high_threshold
+
+        active_diagnostics[
+            "enhancedEdgePixelCount"
+        ] = int(np.count_nonzero(
+            enhanced_corridor_edges
+        ))
+
+        enhanced_primary_candidates = (
+            run_hough_candidate_pass(
+                enhanced_corridor_edges,
+                hand_anchor=hand_anchor,
+                search_region=search_region,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                minimum_line_length_pixels=(
+                    primary_minimum_line_length
+                ),
+                minimum_candidate_length_ratio=(
+                    PRIMARY_MINIMUM_LINE_LENGTH_RATIO
+                ),
+                hough_threshold=(
+                    PRIMARY_HOUGH_THRESHOLD
+                ),
+                diagnostics=active_diagnostics,
+                raw_count_key=(
+                    "enhancedCorridorPrimaryRawHoughLineCount"
+                ),
+                merged_count_key=(
+                    "enhancedCorridorPrimaryMergedHoughLineCount"
+                ),
+            )
+        )
+
+        if enhanced_primary_candidates:
+            active_diagnostics[
+                "detectionPass"
+            ] = "corridor_enhanced_primary"
+
+            active_diagnostics[
+                "minimumLineLengthPixels"
+            ] = primary_minimum_line_length
+
+            active_diagnostics[
+                "primaryRawHoughLineCount"
+            ] = (
+                active_diagnostics[
+                    "corridorPrimaryRawHoughLineCount"
+                ]
+                + active_diagnostics[
+                    "enhancedCorridorPrimaryRawHoughLineCount"
+                ]
+            )
+
+            active_diagnostics[
+                "fallbackRawHoughLineCount"
+            ] = active_diagnostics[
+                "corridorFallbackRawHoughLineCount"
+            ]
+
+            active_diagnostics[
+                "rawHoughLineCount"
+            ] = (
+                active_diagnostics[
+                    "primaryRawHoughLineCount"
+                ]
+                + active_diagnostics[
+                    "fallbackRawHoughLineCount"
+                ]
+            )
+
+            active_diagnostics[
+                "acceptedCandidateCount"
+            ] = len(enhanced_primary_candidates)
+
+            return enhanced_primary_candidates
+
+        enhanced_fallback_candidates = (
+            run_hough_candidate_pass(
+                enhanced_corridor_edges,
+                hand_anchor=hand_anchor,
+                search_region=search_region,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                minimum_line_length_pixels=(
+                    fallback_minimum_line_length
+                ),
+                minimum_candidate_length_ratio=(
+                    FALLBACK_MINIMUM_LINE_LENGTH_RATIO
+                ),
+                hough_threshold=(
+                    FALLBACK_HOUGH_THRESHOLD
+                ),
+                diagnostics=active_diagnostics,
+                raw_count_key=(
+                    "enhancedCorridorFallbackRawHoughLineCount"
+                ),
+                merged_count_key=(
+                    "enhancedCorridorFallbackMergedHoughLineCount"
+                ),
+            )
+        )
+
+        if enhanced_fallback_candidates:
+            active_diagnostics[
+                "detectionPass"
+            ] = "corridor_enhanced_fallback"
+
+            active_diagnostics[
+                "minimumLineLengthPixels"
+            ] = fallback_minimum_line_length
+
+            active_diagnostics[
+                "primaryRawHoughLineCount"
+            ] = (
+                active_diagnostics[
+                    "corridorPrimaryRawHoughLineCount"
+                ]
+                + active_diagnostics[
+                    "enhancedCorridorPrimaryRawHoughLineCount"
+                ]
+            )
+
+            active_diagnostics[
+                "fallbackRawHoughLineCount"
+            ] = (
+                active_diagnostics[
+                    "corridorFallbackRawHoughLineCount"
+                ]
+                + active_diagnostics[
+                    "enhancedCorridorFallbackRawHoughLineCount"
+                ]
+            )
+
+            active_diagnostics[
+                "rawHoughLineCount"
+            ] = (
+                active_diagnostics[
+                    "primaryRawHoughLineCount"
+                ]
+                + active_diagnostics[
+                    "fallbackRawHoughLineCount"
+                ]
+            )
+
+            active_diagnostics[
+                "acceptedCandidateCount"
+            ] = len(enhanced_fallback_candidates)
+
+            return enhanced_fallback_candidates
+
     rectangular_primary_candidates = (
         run_hough_candidate_pass(
             edges,
@@ -1416,6 +1754,9 @@ def detect_shaft_candidates(
             "corridorPrimaryRawHoughLineCount"
         ]
         + active_diagnostics[
+            "enhancedCorridorPrimaryRawHoughLineCount"
+        ]
+        + active_diagnostics[
             "rectangularPrimaryRawHoughLineCount"
         ]
     )
@@ -1437,6 +1778,12 @@ def detect_shaft_candidates(
             ]
             + active_diagnostics[
                 "corridorFallbackRawHoughLineCount"
+            ]
+            + active_diagnostics[
+                "enhancedCorridorPrimaryRawHoughLineCount"
+            ]
+            + active_diagnostics[
+                "enhancedCorridorFallbackRawHoughLineCount"
             ]
             + active_diagnostics[
                 "rectangularPrimaryRawHoughLineCount"
@@ -1486,6 +1833,9 @@ def detect_shaft_candidates(
             "corridorFallbackRawHoughLineCount"
         ]
         + active_diagnostics[
+            "enhancedCorridorFallbackRawHoughLineCount"
+        ]
+        + active_diagnostics[
             "rectangularFallbackRawHoughLineCount"
         ]
     )
@@ -1498,6 +1848,12 @@ def detect_shaft_candidates(
         ]
         + active_diagnostics[
             "corridorFallbackRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "enhancedCorridorPrimaryRawHoughLineCount"
+        ]
+        + active_diagnostics[
+            "enhancedCorridorFallbackRawHoughLineCount"
         ]
         + active_diagnostics[
             "rectangularPrimaryRawHoughLineCount"
@@ -2738,14 +3094,16 @@ def analyze_club_detection(
                 "rotated-video-pixels"
             ),
             "candidateSearch": (
-                "Canny edge detection and a dual-pass "
-                "probabilistic Hough transform first run "
-                "inside a rotated geometry-guided corridor "
-                "estimated from the golfer's forearms and "
-                "hands. If the focused corridor produces no "
-                "accepted candidates, the same primary and "
-                "short-line fallback passes run across the "
-                "broader pose-guided rectangular region."
+                "Standard Canny edge detection and dual-pass "
+                "probabilistic Hough detection first run inside "
+                "a rotated geometry-guided corridor estimated "
+                "from the golfer's forearms and hands. If both "
+                "standard corridor passes fail, CLAHE-enhanced "
+                "grayscale data and locally adaptive Canny "
+                "thresholds receive one additional corridor-only "
+                "primary and short-line fallback attempt. The "
+                "broader pose-guided rectangle remains the final "
+                "fallback."
             ),
             "referenceFrameSource": (
                 "golf-phase-refiner"
