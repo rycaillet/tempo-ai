@@ -21,6 +21,9 @@ from app.club_visualizer import (
     draw_club_detection_visualization,
     save_club_detection_visualization,
 )
+from app.club_short_gap_tracking import (
+    apply_short_gap_tracking,
+)
 from app.club_search_region import (
     SearchRegion,
     build_pose_guided_corridor_mask,
@@ -240,6 +243,7 @@ class ClubFrameDetection(TypedDict):
     timestampSeconds: float | None
     detected: bool
     confidence: float
+    detectionSource: str
     handAnchor: PixelPoint | None
     shaftLine: ShaftLine | None
     candidateCount: int
@@ -248,14 +252,18 @@ class ClubFrameDetection(TypedDict):
     debugImagePath: str | None
     temporalStatus: str
     temporalComparison: TemporalComparison | None
+    trackingDetails: dict[str, Any] | None
 
 
 class ClubDetectionSummary(TypedDict):
     requestedFrames: int
     processedFrames: int
     detectedFrames: int
+    imageDetectedFrames: int
+    trackedFrames: int
     undetectedFrames: int
     detectionRate: float
+    imageDetectionRate: float
     averageConfidence: float
     selectedRotation: str
     visualizationCount: int
@@ -3270,6 +3278,12 @@ def analyze_club_detection(
     finally:
         video.release()
 
+    tracking_summary = apply_short_gap_tracking(
+        frame_results,
+        frame_width=rotated_width,
+        frame_height=rotated_height,
+    )
+
     apply_temporal_consistency_validation(
         frame_results
     )
@@ -3278,6 +3292,18 @@ def analyze_club_detection(
         frame
         for frame in frame_results
         if frame["detected"]
+    ]
+
+    image_detected_results = [
+        frame
+        for frame in detected_results
+        if frame.get("detectionSource") == "image"
+    ]
+
+    tracked_results = [
+        frame
+        for frame in detected_results
+        if frame.get("detectionSource") == "tracked"
     ]
 
     visualized_results = [
@@ -3371,12 +3397,20 @@ def analyze_club_detection(
                 "and assigned to the nearest reference "
                 "phase."
             ),
+            "shortGapTracking": (
+                "A single missing sampled frame may be "
+                "recovered only when it is bracketed by "
+                "two direct image detections with plausible "
+                "shaft-angle and hand-anchor continuity. "
+                "Tracked lines retain explicit provenance "
+                "and reduced confidence."
+            ),
             "temporalValidation": (
-                "Successful dense-frame detections are "
-                "compared chronologically using the "
-                "smallest undirected shaft-angle change. "
-                "Large changes are retained and marked "
-                "for review rather than rejected."
+                "Available direct and conservatively tracked "
+                "shaft lines are compared chronologically "
+                "using the smallest undirected shaft-angle "
+                "change. Large changes are retained and "
+                "marked for review rather than rejected."
             ),
             "candidateDiagnostics": (
                 "Each processed search region records full "
@@ -3424,9 +3458,16 @@ def analyze_club_detection(
                     "prove that either detection is wrong."
                 ),
                 (
-                    "A missing detection is retained "
-                    "as an explicit failure state "
-                    "instead of being inferred."
+                    "Tracking does not fill multi-frame gaps, "
+                    "unbracketed failures, or gaps whose "
+                    "surrounding motion exceeds configured "
+                    "continuity thresholds."
+                ),
+                (
+                    "Tracked shaft lines are interpolation "
+                    "estimates rather than direct image "
+                    "detections and therefore receive lower "
+                    "confidence and explicit provenance."
                 ),
             ],
         },
@@ -3436,6 +3477,12 @@ def analyze_club_detection(
             ),
             "processedFrames": processed_count,
             "detectedFrames": detected_count,
+            "imageDetectedFrames": len(
+                image_detected_results
+            ),
+            "trackedFrames": len(
+                tracked_results
+            ),
             "undetectedFrames": (
                 processed_count
                 - detected_count
@@ -3443,6 +3490,15 @@ def analyze_club_detection(
             "detectionRate": round(
                 (
                     detected_count
+                    / processed_count
+                )
+                if processed_count > 0
+                else 0.0,
+                3,
+            ),
+            "imageDetectionRate": round(
+                (
+                    len(image_detected_results)
                     / processed_count
                 )
                 if processed_count > 0
