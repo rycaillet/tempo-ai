@@ -26,6 +26,21 @@ function getNestedValue(
   let currentValue: unknown = source;
 
   for (const key of path) {
+    if (Array.isArray(currentValue)) {
+      const index = Number.parseInt(key, 10);
+
+      if (
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= currentValue.length
+      ) {
+        return undefined;
+      }
+
+      currentValue = currentValue[index];
+      continue;
+    }
+
     if (!isJsonRecord(currentValue)) {
       return undefined;
     }
@@ -165,89 +180,122 @@ export async function getAnalyses() {
 
 export async function completeAnalysis(
   id: string,
-  report: Prisma.InputJsonValue,
+  analysisPayload: Prisma.InputJsonValue,
+  detailedReport: Prisma.InputJsonValue,
 ) {
-  const swingScore = getFirstNumber(report, [
-    ["scoring", "overallScore"],
-  ]);
+  const swingScore = getFirstNumber(
+    analysisPayload,
+    [
+      ["score", "overallScore"],
+    ],
+  );
 
-  const tempoRatio = getFirstNumber(report, [
+  const tempoRatio = getFirstNumber(
+    detailedReport,
     [
-      "metrics",
-      "tempo",
-      "backswingToDownswingRatio",
+      [
+        "metrics",
+        "tempo",
+        "backswingToDownswingRatio",
+      ],
+      ["summary", "tempoRatio"],
+      ["metrics", "tempo", "ratio"],
+      ["metrics", "tempo", "tempoRatio"],
     ],
-    ["summary", "tempoRatio"],
-    ["metrics", "tempo", "ratio"],
-    ["metrics", "tempo", "tempoRatio"],
-  ]);
+  );
 
-  const backswingSeconds = getFirstNumber(report, [
+  const backswingSeconds = getFirstNumber(
+    detailedReport,
     [
-      "metrics",
-      "tempo",
-      "backswingDurationSeconds",
+      [
+        "metrics",
+        "tempo",
+        "backswingDurationSeconds",
+      ],
+      [
+        "metrics",
+        "tempo",
+        "measurements",
+        "backswingDurationSeconds",
+      ],
+      ["metrics", "tempo", "backswingSeconds"],
     ],
-    [
-      "metrics",
-      "tempo",
-      "measurements",
-      "backswingDurationSeconds",
-    ],
-    ["metrics", "tempo", "backswingSeconds"],
-  ]);
+  );
 
-  const downswingSeconds = getFirstNumber(report, [
+  const downswingSeconds = getFirstNumber(
+    detailedReport,
     [
-      "metrics",
-      "tempo",
-      "downswingDurationSeconds",
+      [
+        "metrics",
+        "tempo",
+        "downswingDurationSeconds",
+      ],
+      [
+        "metrics",
+        "tempo",
+        "measurements",
+        "downswingDurationSeconds",
+      ],
+      ["metrics", "tempo", "downswingSeconds"],
     ],
-    [
-      "metrics",
-      "tempo",
-      "measurements",
-      "downswingDurationSeconds",
-    ],
-    ["metrics", "tempo", "downswingSeconds"],
-  ]);
+  );
 
-  const consistencyScore = getFirstNumber(report, [
-    ["scoring", "consistencyScore"],
-    ["summary", "consistencyScore"],
-  ]);
+  const consistencyScore = getFirstNumber(
+    detailedReport,
+    [
+      ["scoring", "consistencyScore"],
+      ["summary", "consistencyScore"],
+    ],
+  );
 
   const primaryFinding =
-    getFirstString(report, [
-      ["findings", "overallFinding"],
-      ["summary", "primaryFinding"],
-      ["coaching", "headline"],
-      ["coaching", "overview"],
-      ["coaching", "primaryFinding"],
-    ]) ??
+    getFirstString(
+      analysisPayload,
+      [
+        ["findings", "overallFinding"],
+        ["coaching", "headline"],
+        ["coaching", "overview"],
+      ],
+    ) ??
     extractFirstMessage(
-      getNestedValue(report, ["findings"]),
+      getNestedValue(
+        analysisPayload,
+        ["findings"],
+      ),
     );
 
   const recommendation =
-    getFirstString(report, [
-      ["coaching", "primaryFocus"],
-      ["summary", "recommendation"],
-      ["coaching", "recommendation"],
+    getFirstString(
+      analysisPayload,
       [
-        "recommendations",
-        "recommendations",
-        "0",
-        "summary",
+        ["coaching", "primaryFocus"],
+        [
+          "recommendations",
+          "items",
+          "0",
+          "summary",
+        ],
+        [
+          "recommendations",
+          "items",
+          "0",
+          "title",
+        ],
       ],
-    ]) ??
+    ) ??
     extractFirstMessage(
-      getNestedValue(report, ["recommendations"]),
+      getNestedValue(
+        analysisPayload,
+        ["recommendations"],
+      ),
     );
 
-  const phaseTimings = getFirstJsonRecord(report, [
-    ["phaseFrames"],
-  ]);
+  const phaseTimings = getFirstJsonRecord(
+    detailedReport,
+    [
+      ["phaseFrames"],
+    ],
+  );
 
   return prisma.analysis.update({
     where: {
@@ -256,7 +304,8 @@ export async function completeAnalysis(
     data: {
       status: "COMPLETED",
       failureReason: null,
-      analysisReport: report,
+      analysisPayload,
+      analysisReport: detailedReport,
 
       ...(swingScore !== undefined
         ? {
