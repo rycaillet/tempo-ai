@@ -157,6 +157,21 @@ class AnalysisApiContractTests(
                 "warnings": [],
             },
             "summary": {
+                "analysisEngine": {
+                    "name": (
+                        "tempo-ai-analysis-engine"
+                    ),
+                    "version": "1.0.0",
+                    "contractVersion": "1.0.0",
+                    "coachingPromptVersion": (
+                        "tempo-coach-v3"
+                    ),
+                    "metricVersions": {
+                        "tempo": "1.0.0",
+                        "shaftLean": "1.0.0",
+                        "swingPlane": "1.0.0",
+                    },
+                },
                 "clubAnalysisQuality": {
                     "status": "complete",
                     "referencePhasesAvailable": 6,
@@ -181,6 +196,10 @@ class AnalysisApiContractTests(
                     "/output/swing-golf-metrics.json"
                 ),
             },
+            processed_at=(
+                "2026-08-03T18:00:00Z"
+            ),
+            duration_milliseconds=1234.567,
         )
 
         self.assertEqual(
@@ -190,6 +209,26 @@ class AnalysisApiContractTests(
         self.assertEqual(
             result["status"],
             "ready",
+        )
+        self.assertEqual(
+            result["engine"]["name"],
+            "tempo-ai-analysis-engine",
+        )
+        self.assertEqual(
+            result["engine"]["processedAt"],
+            "2026-08-03T18:00:00Z",
+        )
+        self.assertEqual(
+            result["engine"][
+                "durationMilliseconds"
+            ],
+            1234.567,
+        )
+        self.assertEqual(
+            result["engine"]["metricVersions"][
+                "swingPlane"
+            ],
+            "1.0.0",
         )
         self.assertEqual(
             result["source"]["handedness"],

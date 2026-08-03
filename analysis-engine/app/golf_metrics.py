@@ -8,10 +8,17 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.analysis import build_swing_analysis_report
+from app.analysis.api_contract import (
+    ANALYSIS_API_VERSION,
+)
+from app.analysis.versioning import (
+    build_analysis_version_manifest,
+)
 from app.club_analysis_quality import (
     build_club_analysis_quality_summary,
 )
 from app.coaching import (
+    PROMPT_VERSION,
     CoachingProvider,
     build_coach_context,
     build_configured_coaching_provider,
@@ -47,6 +54,7 @@ from app.metrics.registry import (
     SummaryField,
     build_registered_metric_summary,
     build_registered_metrics,
+    get_metric_versions,
     validate_scoring_weights,
 )
 from app.scoring import calculate_swing_score
@@ -2164,6 +2172,21 @@ def analyze_golf_metrics(
             ),
             "clubAnalysisQuality": (
                 club_analysis_quality
+            ),
+            "analysisEngine": (
+                build_analysis_version_manifest(
+                    contract_version=(
+                        ANALYSIS_API_VERSION
+                    ),
+                    metric_versions=(
+                        get_metric_versions(
+                            METRIC_REGISTRY
+                        )
+                    ),
+                    coaching_prompt_version=(
+                        PROMPT_VERSION
+                    ),
+                )
             ),
             **build_registered_metric_summary(
                 registrations=METRIC_REGISTRY,

@@ -10,6 +10,7 @@ from app.metrics.registry import (
     build_registered_metric_summary,
     build_registered_metrics,
     get_enabled_metric_registrations,
+    get_metric_versions,
     get_registered_metric_keys,
     get_score_enabled_metric_registrations,
     validate_metric_registry,
@@ -293,6 +294,43 @@ class MetricRegistryTests(unittest.TestCase):
                 enabled_only=True,
             ),
             ("firstMetric",),
+        )
+
+    def test_get_metric_versions_returns_enabled_versions(
+        self,
+    ) -> None:
+        registrations = (
+            self.build_registration(
+                key="firstMetric",
+                summary_key="firstSummary",
+                version="1.2.0",
+                scoring_weight=50.0,
+            ),
+            self.build_registration(
+                key="secondMetric",
+                summary_key="secondSummary",
+                enabled=False,
+                version="2.0.0",
+                scoring_weight=50.0,
+            ),
+        )
+
+        self.assertEqual(
+            get_metric_versions(registrations),
+            {
+                "firstMetric": "1.2.0",
+            },
+        )
+
+        self.assertEqual(
+            get_metric_versions(
+                registrations,
+                enabled_only=False,
+            ),
+            {
+                "firstMetric": "1.2.0",
+                "secondMetric": "2.0.0",
+            },
         )
 
     def test_validate_scoring_weights_accepts_expected_total(

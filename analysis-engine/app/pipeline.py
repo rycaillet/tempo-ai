@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 
 from app.analysis.api_contract import (
@@ -60,6 +62,13 @@ def run_analysis_pipeline(
     handedness: Handedness = "right",
     report_output_path: Path | None = None,
 ) -> dict[str, Any]:
+    started_at = perf_counter()
+    processed_at = (
+        datetime.now(UTC)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
     resolved_video_path = (
         video_path
         .expanduser()
@@ -271,6 +280,10 @@ def run_analysis_pipeline(
         ),
     }
 
+    duration_milliseconds = (
+        perf_counter() - started_at
+    ) * 1000.0
+
     analysis_contract = (
         build_analysis_api_contract(
             report=final_report,
@@ -279,6 +292,10 @@ def run_analysis_pipeline(
             ),
             handedness=handedness,
             artifacts=artifacts,
+            processed_at=processed_at,
+            duration_milliseconds=(
+                duration_milliseconds
+            ),
         )
     )
 

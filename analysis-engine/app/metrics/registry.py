@@ -129,6 +129,34 @@ def get_score_enabled_metric_registrations(
     )
 
 
+def get_metric_versions(
+    registrations: Iterable[MetricRegistration],
+    *,
+    enabled_only: bool = True,
+) -> dict[str, str]:
+    """
+    Return registered metric versions keyed by public metric key.
+    """
+
+    registration_list = tuple(registrations)
+
+    validate_metric_registry(registration_list)
+
+    if enabled_only:
+        registration_list = (
+            get_enabled_metric_registrations(
+                registration_list
+            )
+        )
+
+    return {
+        registration.definition.key: (
+            registration.version
+        )
+        for registration in registration_list
+    }
+
+
 def validate_scoring_weights(
     registrations: Iterable[MetricRegistration],
     expected_total: float = 100.0,

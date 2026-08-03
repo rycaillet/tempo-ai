@@ -66,6 +66,17 @@ class PipelineApiContractTests(
                     "warnings": [],
                 },
                 "summary": {
+                    "analysisEngine": {
+                        "name": (
+                            "tempo-ai-analysis-engine"
+                        ),
+                        "version": "1.0.0",
+                        "contractVersion": "1.0.0",
+                        "coachingPromptVersion": (
+                            "tempo-coach-v3"
+                        ),
+                        "metricVersions": {},
+                    },
                     "clubAnalysisQuality": {
                         "status": "not_available",
                     },
@@ -189,6 +200,20 @@ class PipelineApiContractTests(
             self.assertEqual(
                 result["analysis"]["status"],
                 "partial",
+            )
+            self.assertEqual(
+                result["analysis"]["engine"]["name"],
+                "tempo-ai-analysis-engine",
+            )
+            self.assertIn(
+                "processedAt",
+                result["analysis"]["engine"],
+            )
+            self.assertGreaterEqual(
+                result["analysis"]["engine"][
+                    "durationMilliseconds"
+                ],
+                0.0,
             )
             self.assertEqual(
                 result["analysis"]["source"][

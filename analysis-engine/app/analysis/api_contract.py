@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from app.analysis.versioning import (
+    build_execution_metadata,
+)
 from app.coaching.context import build_coach_context
 
 
@@ -349,6 +352,8 @@ def build_analysis_api_contract(
     video_path: str,
     handedness: str,
     artifacts: Mapping[str, Any],
+    processed_at: str | None = None,
+    duration_milliseconds: float | None = None,
 ) -> dict[str, Any]:
     """
     Build the stable backend-facing TempoAI analysis contract.
@@ -373,6 +378,25 @@ def build_analysis_api_contract(
 
     coaching = report.get("coaching")
 
+    engine = dict(
+        get_mapping(
+            summary.get("analysisEngine")
+        )
+    )
+
+    if (
+        processed_at is not None
+        and duration_milliseconds is not None
+    ):
+        engine.update(
+            build_execution_metadata(
+                processed_at=processed_at,
+                duration_milliseconds=(
+                    duration_milliseconds
+                ),
+            )
+        )
+
     status = (
         "ready"
         if (
@@ -386,6 +410,7 @@ def build_analysis_api_contract(
 
     return {
         "contractVersion": ANALYSIS_API_VERSION,
+        "engine": engine,
         "status": status,
         "source": build_source_summary(
             report=report,
