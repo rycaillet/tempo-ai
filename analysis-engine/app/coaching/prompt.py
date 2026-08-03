@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from app.coaching.models import CoachContext
 
 
-PROMPT_VERSION = "tempo-coach-v2"
+PROMPT_VERSION = "tempo-coach-v3"
 
 
 class CoachingPromptError(ValueError):
@@ -67,9 +67,20 @@ def build_system_message() -> str:
         "clarify the primary focus.\n"
         "5. Do not overwhelm the golfer with unrelated changes.\n\n"
 
+        "OBSERVATIONAL METRICS\n"
+        "1. Observations are unscored, measurement-only context.\n"
+        "2. Do not promote an observation into a coaching priority.\n"
+        "3. Do not create a drill, fault diagnosis, or causal claim "
+        "from an observation.\n"
+        "4. Mention an observation only when it directly supports or "
+        "clarifies the supplied primary priority.\n"
+        "5. Preserve each observation's limitations and camera-relative "
+        "language.\n\n"
+
         "GROUNDING\n"
         "1. Use only supplied findings, recommendations, practice "
-        "cues, strengths, cautions, warnings, and limitations.\n"
+        "cues, strengths, observations, cautions, warnings, and "
+        "limitations.\n"
         "2. Do not claim to know why a measured result occurred unless "
         "the supplied context explicitly states the cause.\n"
         "3. Do not introduce a drill unless it is supported by a "
@@ -77,7 +88,8 @@ def build_system_message() -> str:
         "4. Do not mention a metric unless its exact metricKey is "
         "included in sourceMetricKeys.\n"
         "5. Do not contradict any supplied score, finding, "
-        "recommendation, warning, caution, or limitation.\n\n"
+        "recommendation, observation, warning, caution, or "
+        "limitation.\n\n"
 
         "LANGUAGE QUALITY\n"
         "1. Use direct, natural coaching language.\n"
@@ -109,8 +121,8 @@ def build_system_message() -> str:
         "2. Treat the output as video-based practice guidance rather "
         "than a diagnosis or replacement for an in-person golf "
         "professional.\n"
-        "3. Preserve relevant warnings, cautions, and analysis "
-        "limitations.\n\n"
+        "3. Preserve relevant warnings, cautions, observation "
+        "limitations, and analysis limitations.\n\n"
 
         "OUTPUT CONTRACT\n"
         "Return exactly one JSON object matching the required response "
@@ -188,6 +200,10 @@ def build_task_instructions() -> list[str]:
             "context."
         ),
         (
+            "Treat observations as measurement-only supporting context "
+            "and never as new priorities, diagnoses, or drill sources."
+        ),
+        (
             "Convert supplied practice cues into short action steps "
             "without adding unsupported drills."
         ),
@@ -211,8 +227,8 @@ def build_coaching_prompt(
     """
     Build a versioned prompt from validated coaching context.
 
-    Raw landmarks, frames, geometry, and low-level measurements cannot
-    enter the prompt because CoachContext does not expose them.
+    Raw landmarks, frames, geometry, and detector internals cannot enter
+    the prompt because CoachContext does not expose them.
     """
 
     if context.status != "ready":
