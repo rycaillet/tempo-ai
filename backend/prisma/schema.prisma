@@ -31,7 +31,9 @@ model Analysis {
   primaryFinding   String?
   recommendation   String?
   phaseTimings     Json?
-  analysisReport   Json?
+
+  analysisPayload Json?
+  analysisReport  Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

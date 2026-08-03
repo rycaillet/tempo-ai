@@ -21,6 +21,11 @@ type PipelineExecutionResult = {
   stderr: string;
 };
 
+export type ParsedPipelineResult = {
+  analysis: Prisma.InputJsonObject;
+  report: Prisma.InputJsonObject;
+};
+
 function isJsonRecord(value: unknown): value is JsonRecord {
   return (
     typeof value === "object" &&
@@ -177,9 +182,24 @@ function runAnalysisPipeline(
   });
 }
 
-function parsePipelineReport(
+function validateContractVersion({
+  value,
+  fieldName,
+}: {
+  value: unknown;
+  fieldName: string;
+}): void {
+  if (value !== env.ANALYSIS_API_VERSION) {
+    throw new Error(
+      `The analysis engine returned unsupported ${fieldName}. ` +
+        `Expected ${env.ANALYSIS_API_VERSION}.`,
+    );
+  }
+}
+
+export function parsePipelineOutput(
   rawOutput: string,
-): Prisma.InputJsonValue {
+): ParsedPipelineResult {
   const normalizedOutput = rawOutput.trim();
 
   if (normalizedOutput.length === 0) {
@@ -213,29 +233,59 @@ function parsePipelineReport(
     throw new Error(pipelineError);
   }
 
+  validateContractVersion({
+    value: parsedOutput.apiVersion,
+    fieldName: "API version",
+  });
+
+  const analysis = parsedOutput.analysis;
+
+  if (!isJsonRecord(analysis)) {
+    throw new Error(
+      "The analysis engine response did not contain a valid analysis contract.",
+    );
+  }
+
+  validateContractVersion({
+    value: analysis.contractVersion,
+    fieldName: "analysis contract version",
+  });
+
+  if (
+    analysis.status !== "ready" &&
+    analysis.status !== "partial"
+  ) {
+    throw new Error(
+      "The analysis engine returned an unsupported analysis status.",
+    );
+  }
+
   const report = parsedOutput.report;
 
   if (!isJsonRecord(report)) {
     throw new Error(
-      "The analysis engine response did not contain a valid report.",
+      "The analysis engine response did not contain a valid detailed report.",
     );
   }
 
-  return report as Prisma.InputJsonValue;
+  return {
+    analysis: analysis as Prisma.InputJsonObject,
+    report: report as Prisma.InputJsonObject,
+  };
 }
 
 async function processAnalysis(
   analysisId: string,
 ): Promise<void> {
-  const analysis = await getAnalysisById(analysisId);
+  const analysisRecord = await getAnalysisById(analysisId);
 
-  if (!analysis) {
+  if (!analysisRecord) {
     throw new Error(
       `Analysis ${analysisId} could not be found.`,
     );
   }
 
-  if (!analysis.storedFilename) {
+  if (!analysisRecord.storedFilename) {
     throw new Error(
       `Analysis ${analysisId} does not have an uploaded video filename.`,
     );
@@ -243,7 +293,7 @@ async function processAnalysis(
 
   const videoPath = path.resolve(
     analysisUploadDirectory,
-    analysis.storedFilename,
+    analysisRecord.storedFilename,
   );
 
   console.log(
@@ -258,11 +308,15 @@ async function processAnalysis(
     );
   }
 
-  const report = parsePipelineReport(
+  const pipelineResult = parsePipelineOutput(
     executionResult.stdout,
   );
 
-  await completeAnalysis(analysisId, report);
+  await completeAnalysis(
+    analysisId,
+    pipelineResult.analysis,
+    pipelineResult.report,
+  );
 
   console.log(
     `Analysis ${analysisId} completed successfully.`,

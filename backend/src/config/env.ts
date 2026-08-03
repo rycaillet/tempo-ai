@@ -21,6 +21,14 @@ const envSchema = z.object({
     .string()
     .min(1)
     .default("../analysis-engine/.venv/bin/python"),
+
+  ANALYSIS_API_VERSION: z
+    .string()
+    .regex(
+      /^\d+\.\d+\.\d+$/,
+      "ANALYSIS_API_VERSION must use semantic version format.",
+    )
+    .default("1.0.0"),
 });
 
 const result = envSchema.safeParse(process.env);
