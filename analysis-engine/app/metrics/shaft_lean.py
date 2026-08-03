@@ -308,6 +308,27 @@ def classify_camera_relative_lean(
     }
 
 
+
+def select_metric_shaft_line(
+    impact_detection: Mapping[str, Any],
+) -> tuple[Mapping[str, Any] | None, str | None]:
+    smoothed_shaft_line = impact_detection.get(
+        "smoothedShaftLine"
+    )
+
+    if isinstance(smoothed_shaft_line, Mapping):
+        return smoothed_shaft_line, "smoothed"
+
+    raw_shaft_line = impact_detection.get(
+        "shaftLine"
+    )
+
+    if isinstance(raw_shaft_line, Mapping):
+        return raw_shaft_line, "raw"
+
+    return None, None
+
+
 def build_unavailable_result(
     impact_detection: Mapping[str, Any] | None,
     reason: str,
@@ -353,6 +374,7 @@ def build_unavailable_result(
             "gripDistanceFromHandsPixels": None,
             "clubheadDistanceFromHandsPixels": None,
             "orientationConfidence": None,
+            "shaftGeometrySource": None,
             "clubDetectionConfidence": (
                 round_value(
                     float(detection_confidence)
@@ -439,8 +461,10 @@ def build_shaft_lean_metrics(
     hand_anchor = impact_detection.get(
         "handAnchor"
     )
-    shaft_line = impact_detection.get(
-        "shaftLine"
+    shaft_line, shaft_geometry_source = (
+        select_metric_shaft_line(
+            impact_detection
+        )
     )
 
     if not isinstance(hand_anchor, Mapping):
@@ -457,7 +481,8 @@ def build_shaft_lean_metrics(
             impact_detection,
             (
                 "The impact club detection is missing "
-                "a valid shaft line."
+                "both a valid smoothed shaft line and "
+                "a valid raw shaft line."
             ),
         )
 
@@ -594,6 +619,9 @@ def build_shaft_lean_metrics(
             "orientationConfidence": (
                 orientation_confidence_value
             ),
+            "shaftGeometrySource": (
+                shaft_geometry_source
+            ),
             "clubDetectionConfidence": (
                 round_value(
                     detection_confidence
@@ -618,8 +646,9 @@ def build_shaft_lean_metrics(
             "status": "measurement_only",
             "message": finding["message"],
             "basis": (
-                "This prototype measures the detected shaft's "
-                "two-dimensional direction relative to image "
+                "This prototype measures the selected shaft "
+                "geometry's two-dimensional direction relative "
+                "to image "
                 "vertical at impact. Negative values lean toward "
                 "image-left and positive values lean toward "
                 "image-right. Camera position, video mirroring, "
