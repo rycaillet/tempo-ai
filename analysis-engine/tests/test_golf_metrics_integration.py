@@ -286,6 +286,41 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             )
 
             self.assertEqual(
+                summary["clubAnalysisQuality"],
+                {
+                    "status": "not_available",
+                    "requestedFrames": 0,
+                    "processedFrames": 0,
+                    "detectedFrames": 0,
+                    "imageDetectedFrames": 0,
+                    "trackedFrames": 0,
+                    "smoothedFrames": 0,
+                    "detectionRate": None,
+                    "averageConfidence": None,
+                    "referencePhasesAvailable": 0,
+                    "referencePhasesTotal": 6,
+                    "referencePhaseCompleteness": 0.0,
+                    "minimumReferenceConfidence": None,
+                    "usesTrackedGeometry": False,
+                    "usesSmoothedGeometry": False,
+                    "trackedReferenceCount": 0,
+                    "smoothedReferenceCount": 0,
+                    "unavailableReferencePhases": [
+                        "address",
+                        "takeaway",
+                        "topOfBackswing",
+                        "downswingStart",
+                        "impact",
+                        "finish",
+                    ],
+                    "warnings": [
+                        "club_detection_not_provided",
+                        "missing_reference_phase_geometry",
+                    ],
+                },
+            )
+
+            self.assertEqual(
                 validation["status"],
                 "valid",
             )
