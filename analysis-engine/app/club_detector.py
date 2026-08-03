@@ -24,6 +24,9 @@ from app.club_visualizer import (
 from app.club_short_gap_tracking import (
     apply_short_gap_tracking,
 )
+from app.club_trajectory_smoothing import (
+    apply_club_trajectory_smoothing,
+)
 from app.club_search_region import (
     SearchRegion,
     build_pose_guided_corridor_mask,
@@ -246,6 +249,8 @@ class ClubFrameDetection(TypedDict):
     detectionSource: str
     handAnchor: PixelPoint | None
     shaftLine: ShaftLine | None
+    smoothedShaftLine: ShaftLine | None
+    smoothingDetails: dict[str, Any] | None
     candidateCount: int
     candidateDiagnostics: CandidateDiagnostics | None
     failureReason: str | None
@@ -261,6 +266,7 @@ class ClubDetectionSummary(TypedDict):
     detectedFrames: int
     imageDetectedFrames: int
     trackedFrames: int
+    smoothedFrames: int
     undetectedFrames: int
     detectionRate: float
     imageDetectionRate: float
@@ -3284,6 +3290,12 @@ def analyze_club_detection(
         frame_height=rotated_height,
     )
 
+    smoothing_summary = apply_club_trajectory_smoothing(
+        frame_results,
+        frame_width=rotated_width,
+        frame_height=rotated_height,
+    )
+
     apply_temporal_consistency_validation(
         frame_results
     )
@@ -3405,6 +3417,15 @@ def analyze_club_detection(
                 "Tracked lines retain explicit provenance "
                 "and reduced confidence."
             ),
+            "trajectorySmoothing": (
+                "Available raw image-detected and tracked "
+                "shaft lines may receive a separate "
+                "three-frame weighted endpoint smoothing "
+                "result. Smoothing requires two nearby "
+                "detected neighbors with plausible angle "
+                "continuity, never fills missing frames, "
+                "and preserves every original shaftLine."
+            ),
             "temporalValidation": (
                 "Available direct and conservatively tracked "
                 "shaft lines are compared chronologically "
@@ -3469,6 +3490,13 @@ def analyze_club_detection(
                     "detections and therefore receive lower "
                     "confidence and explicit provenance."
                 ),
+                (
+                    "Smoothed shaft lines are stabilized "
+                    "derivatives of available raw lines. "
+                    "They do not replace raw detections and "
+                    "should not be treated as new image "
+                    "evidence."
+                ),
             ],
         },
         "summary": {
@@ -3483,6 +3511,9 @@ def analyze_club_detection(
             "trackedFrames": len(
                 tracked_results
             ),
+            "smoothedFrames": smoothing_summary[
+                "smoothedFrames"
+            ],
             "undetectedFrames": (
                 processed_count
                 - detected_count
