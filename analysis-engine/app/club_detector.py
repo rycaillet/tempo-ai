@@ -64,6 +64,10 @@ FALLBACK_HOUGH_THRESHOLD = 18
 HOUGH_THRESHOLD = PRIMARY_HOUGH_THRESHOLD
 HOUGH_MAX_LINE_GAP = 18
 
+MERGE_MAXIMUM_ANGLE_CHANGE_DEGREES = 10.0
+MERGE_MAXIMUM_PERPENDICULAR_DISTANCE_RATIO = 0.012
+MERGE_MAXIMUM_ENDPOINT_GAP_RATIO = 0.045
+
 MAXIMUM_REFERENCE_ANGLE_CHANGE_DEGREES = 75.0
 MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES = 65.0
 MAXIMUM_TEMPORAL_DISTAL_SHIFT_RATIO = 0.30
@@ -121,17 +125,25 @@ class CandidateDiagnostics(TypedDict):
 
     minimumLineLengthPixels: int
     rawHoughLineCount: int
+    mergedHoughLineCount: int
+    segmentMergeCount: int
 
     primaryMinimumLineLengthPixels: int
     primaryRawHoughLineCount: int
+    primaryMergedHoughLineCount: int
 
     fallbackMinimumLineLengthPixels: int
     fallbackRawHoughLineCount: int
+    fallbackMergedHoughLineCount: int
 
     corridorPrimaryRawHoughLineCount: int
+    corridorPrimaryMergedHoughLineCount: int
     corridorFallbackRawHoughLineCount: int
+    corridorFallbackMergedHoughLineCount: int
     rectangularPrimaryRawHoughLineCount: int
+    rectangularPrimaryMergedHoughLineCount: int
     rectangularFallbackRawHoughLineCount: int
+    rectangularFallbackMergedHoughLineCount: int
 
     rejectedInvalidCoordinates: int
     rejectedInvalidFrameDimensions: int
@@ -512,17 +524,25 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
 
         "minimumLineLengthPixels": 0,
         "rawHoughLineCount": 0,
+        "mergedHoughLineCount": 0,
+        "segmentMergeCount": 0,
 
         "primaryMinimumLineLengthPixels": 0,
         "primaryRawHoughLineCount": 0,
+        "primaryMergedHoughLineCount": 0,
 
         "fallbackMinimumLineLengthPixels": 0,
         "fallbackRawHoughLineCount": 0,
+        "fallbackMergedHoughLineCount": 0,
 
         "corridorPrimaryRawHoughLineCount": 0,
+        "corridorPrimaryMergedHoughLineCount": 0,
         "corridorFallbackRawHoughLineCount": 0,
+        "corridorFallbackMergedHoughLineCount": 0,
         "rectangularPrimaryRawHoughLineCount": 0,
+        "rectangularPrimaryMergedHoughLineCount": 0,
         "rectangularFallbackRawHoughLineCount": 0,
+        "rectangularFallbackMergedHoughLineCount": 0,
 
         "rejectedInvalidCoordinates": 0,
         "rejectedInvalidFrameDimensions": 0,
@@ -755,6 +775,290 @@ def sort_shaft_candidates(
     )
 
 
+
+def _coordinates_to_points(
+    coordinates: Sequence[int],
+) -> tuple[PixelPoint, PixelPoint]:
+    if len(coordinates) != 4:
+        raise ValueError(
+            "A shaft segment must contain exactly "
+            "four coordinates."
+        )
+
+    return (
+        {
+            "x": float(coordinates[0]),
+            "y": float(coordinates[1]),
+        },
+        {
+            "x": float(coordinates[2]),
+            "y": float(coordinates[3]),
+        },
+    )
+
+
+def _point_to_infinite_line_distance(
+    point: PixelPoint,
+    line_start: PixelPoint,
+    line_end: PixelPoint,
+) -> float:
+    line_x = line_end["x"] - line_start["x"]
+    line_y = line_end["y"] - line_start["y"]
+    line_length = math.hypot(line_x, line_y)
+
+    if line_length <= 0.0:
+        return calculate_line_length(
+            point,
+            line_start,
+        )
+
+    return abs(
+        line_y * point["x"]
+        - line_x * point["y"]
+        + line_end["x"] * line_start["y"]
+        - line_end["y"] * line_start["x"]
+    ) / line_length
+
+
+def _minimum_endpoint_gap(
+    first_start: PixelPoint,
+    first_end: PixelPoint,
+    second_start: PixelPoint,
+    second_end: PixelPoint,
+) -> float:
+    return min(
+        calculate_line_length(first_start, second_start),
+        calculate_line_length(first_start, second_end),
+        calculate_line_length(first_end, second_start),
+        calculate_line_length(first_end, second_end),
+    )
+
+
+def _segments_are_mergeable(
+    first_coordinates: Sequence[int],
+    second_coordinates: Sequence[int],
+    *,
+    frame_diagonal: float,
+) -> bool:
+    if frame_diagonal <= 0.0:
+        return False
+
+    first_start, first_end = _coordinates_to_points(
+        first_coordinates
+    )
+    second_start, second_end = _coordinates_to_points(
+        second_coordinates
+    )
+
+    angle_change = calculate_axial_angle_change(
+        calculate_line_angle(first_start, first_end),
+        calculate_line_angle(second_start, second_end),
+    )
+
+    if angle_change > MERGE_MAXIMUM_ANGLE_CHANGE_DEGREES:
+        return False
+
+    maximum_perpendicular_distance = (
+        frame_diagonal
+        * MERGE_MAXIMUM_PERPENDICULAR_DISTANCE_RATIO
+    )
+
+    perpendicular_distance = min(
+        max(
+            _point_to_infinite_line_distance(
+                second_start,
+                first_start,
+                first_end,
+            ),
+            _point_to_infinite_line_distance(
+                second_end,
+                first_start,
+                first_end,
+            ),
+        ),
+        max(
+            _point_to_infinite_line_distance(
+                first_start,
+                second_start,
+                second_end,
+            ),
+            _point_to_infinite_line_distance(
+                first_end,
+                second_start,
+                second_end,
+            ),
+        ),
+    )
+
+    if perpendicular_distance > maximum_perpendicular_distance:
+        return False
+
+    endpoint_gap = _minimum_endpoint_gap(
+        first_start,
+        first_end,
+        second_start,
+        second_end,
+    )
+
+    return endpoint_gap <= (
+        frame_diagonal
+        * MERGE_MAXIMUM_ENDPOINT_GAP_RATIO
+    )
+
+
+def _merge_segment_group(
+    segment_group: Sequence[Sequence[int]],
+) -> list[int]:
+    if not segment_group:
+        raise ValueError(
+            "Cannot merge an empty segment group."
+        )
+
+    points: list[PixelPoint] = []
+
+    for coordinates in segment_group:
+        start, end = _coordinates_to_points(
+            coordinates
+        )
+        points.extend((start, end))
+
+    reference_start, reference_end = (
+        _coordinates_to_points(segment_group[0])
+    )
+
+    direction_x = (
+        reference_end["x"] - reference_start["x"]
+    )
+    direction_y = (
+        reference_end["y"] - reference_start["y"]
+    )
+    direction_length = math.hypot(
+        direction_x,
+        direction_y,
+    )
+
+    if direction_length <= 0.0:
+        return [
+            int(round(reference_start["x"])),
+            int(round(reference_start["y"])),
+            int(round(reference_end["x"])),
+            int(round(reference_end["y"])),
+        ]
+
+    unit_x = direction_x / direction_length
+    unit_y = direction_y / direction_length
+
+    projections = [
+        (
+            (
+                point["x"] - reference_start["x"]
+            ) * unit_x
+            + (
+                point["y"] - reference_start["y"]
+            ) * unit_y
+        )
+        for point in points
+    ]
+
+    minimum_projection = min(projections)
+    maximum_projection = max(projections)
+
+    return [
+        int(round(
+            reference_start["x"]
+            + minimum_projection * unit_x
+        )),
+        int(round(
+            reference_start["y"]
+            + minimum_projection * unit_y
+        )),
+        int(round(
+            reference_start["x"]
+            + maximum_projection * unit_x
+        )),
+        int(round(
+            reference_start["y"]
+            + maximum_projection * unit_y
+        )),
+    ]
+
+
+def merge_collinear_segments(
+    coordinates: Sequence[Sequence[int]],
+    *,
+    frame_width: int,
+    frame_height: int,
+) -> list[list[int]]:
+    if not coordinates:
+        return []
+
+    frame_diagonal = math.hypot(
+        frame_width,
+        frame_height,
+    )
+
+    groups: list[list[list[int]]] = []
+
+    for segment in coordinates:
+        normalized_segment = [
+            int(value)
+            for value in segment
+        ]
+
+        for group in groups:
+            if _segments_are_mergeable(
+                _merge_segment_group(group),
+                normalized_segment,
+                frame_diagonal=frame_diagonal,
+            ):
+                group.append(normalized_segment)
+                break
+        else:
+            groups.append([normalized_segment])
+
+    return [
+        _merge_segment_group(group)
+        for group in groups
+    ]
+
+
+def update_merged_hough_diagnostics(
+    diagnostics: CandidateDiagnostics,
+) -> None:
+    diagnostics[
+        "primaryMergedHoughLineCount"
+    ] = (
+        diagnostics[
+            "corridorPrimaryMergedHoughLineCount"
+        ]
+        + diagnostics[
+            "rectangularPrimaryMergedHoughLineCount"
+        ]
+    )
+
+    diagnostics[
+        "fallbackMergedHoughLineCount"
+    ] = (
+        diagnostics[
+            "corridorFallbackMergedHoughLineCount"
+        ]
+        + diagnostics[
+            "rectangularFallbackMergedHoughLineCount"
+        ]
+    )
+
+    diagnostics[
+        "mergedHoughLineCount"
+    ] = (
+        diagnostics[
+            "primaryMergedHoughLineCount"
+        ]
+        + diagnostics[
+            "fallbackMergedHoughLineCount"
+        ]
+    )
+
+
 def run_hough_candidate_pass(
     edges: np.ndarray,
     *,
@@ -767,6 +1071,7 @@ def run_hough_candidate_pass(
     hough_threshold: int,
     diagnostics: CandidateDiagnostics,
     raw_count_key: str,
+    merged_count_key: str,
 ) -> list[ShaftCandidate]:
     lines = cv2.HoughLinesP(
         edges,
@@ -779,26 +1084,45 @@ def run_hough_candidate_pass(
 
     if lines is None:
         diagnostics[raw_count_key] = 0
+        diagnostics[merged_count_key] = 0
+        update_merged_hough_diagnostics(
+            diagnostics
+        )
         return []
 
     diagnostics[raw_count_key] = len(lines)
 
+    full_frame_coordinates = [
+        translate_coordinates_to_full_frame(
+            np.asarray(line).reshape(-1).tolist(),
+            search_region=search_region,
+        )
+        for line in lines
+    ]
+
+    merged_coordinates = merge_collinear_segments(
+        full_frame_coordinates,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
+
+    diagnostics[merged_count_key] = len(
+        merged_coordinates
+    )
+
+    update_merged_hough_diagnostics(
+        diagnostics
+    )
+
+    diagnostics["segmentMergeCount"] += max(
+        0,
+        len(full_frame_coordinates)
+        - len(merged_coordinates),
+    )
+
     candidates: list[ShaftCandidate] = []
 
-    for line in lines:
-        local_coordinates = (
-            np.asarray(line)
-            .reshape(-1)
-            .tolist()
-        )
-
-        coordinates = (
-            translate_coordinates_to_full_frame(
-                local_coordinates,
-                search_region=search_region,
-            )
-        )
-
+    for coordinates in merged_coordinates:
         candidate, rejection_reason = (
             evaluate_shaft_candidate(
                 coordinates,
@@ -958,6 +1282,9 @@ def detect_shaft_candidates(
                 raw_count_key=(
                     "corridorPrimaryRawHoughLineCount"
                 ),
+                merged_count_key=(
+                    "corridorPrimaryMergedHoughLineCount"
+                ),
             )
         )
 
@@ -1011,6 +1338,9 @@ def detect_shaft_candidates(
                 diagnostics=active_diagnostics,
                 raw_count_key=(
                     "corridorFallbackRawHoughLineCount"
+                ),
+                merged_count_key=(
+                    "corridorFallbackMergedHoughLineCount"
                 ),
             )
         )
@@ -1072,6 +1402,9 @@ def detect_shaft_candidates(
             diagnostics=active_diagnostics,
             raw_count_key=(
                 "rectangularPrimaryRawHoughLineCount"
+            ),
+            merged_count_key=(
+                "rectangularPrimaryMergedHoughLineCount"
             ),
         )
     )
@@ -1139,6 +1472,9 @@ def detect_shaft_candidates(
             diagnostics=active_diagnostics,
             raw_count_key=(
                 "rectangularFallbackRawHoughLineCount"
+            ),
+            merged_count_key=(
+                "rectangularFallbackMergedHoughLineCount"
             ),
         )
     )
@@ -2431,7 +2767,8 @@ def analyze_club_detection(
             "candidateDiagnostics": (
                 "Each processed search region records full "
                 "and corridor edge density, per-pass raw "
-                "Hough line counts, accepted candidate "
+                "and merged Hough line counts, segment merge "
+                "totals, accepted candidate "
                 "count, image-filter rejection totals, and "
                 "a serializable record for every candidate "
                 "evaluated during image-only or temporal "
