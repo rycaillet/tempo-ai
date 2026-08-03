@@ -31,6 +31,9 @@ from app.metrics.rotation import (
 from app.metrics.shaft_lean import (
     build_shaft_lean_metrics,
 )
+from app.metrics.swing_plane import (
+    build_swing_plane_metrics,
+)
 from app.metrics.weight_shift import (
     build_weight_shift_metrics,
 )
@@ -1450,6 +1453,17 @@ def build_registered_shaft_lean(
         ],
     )
 
+
+def build_registered_swing_plane(
+    context: MetricContext,
+) -> dict[str, Any]:
+    return build_swing_plane_metrics(
+        club_detection=context[
+            "club_detection"
+        ],
+    )
+
+
 METRIC_DEFINITIONS = (
     MetricDefinition(
         key="tempo",
@@ -1780,6 +1794,43 @@ METRIC_DEFINITIONS = (
             ),
         ),
     ),
+    MetricDefinition(
+        key="swingPlane",
+        display_name="Swing plane",
+        builder=build_registered_swing_plane,
+        summary_fields=(
+            SummaryField(
+                output_key="swingPlaneClassification",
+                value_path=("classification",),
+            ),
+            SummaryField(
+                output_key="swingPlaneConfidence",
+                value_path=("confidence",),
+            ),
+            SummaryField(
+                output_key=(
+                    "swingPlaneMeasurementCompleteness"
+                ),
+                value_path=(
+                    "measurementCompleteness",
+                    "ratio",
+                ),
+            ),
+            SummaryField(
+                output_key="swingPlaneFeedbackStatus",
+                value_path=("feedback", "status"),
+            ),
+            SummaryField(
+                output_key=(
+                    "swingPlaneFeedbackDeliveryStatus"
+                ),
+                value_path=(
+                    "feedback",
+                    "deliveryStatus",
+                ),
+            ),
+        ),
+    ),
 )
 
 METRIC_SCORING_WEIGHTS = {
@@ -1791,6 +1842,7 @@ METRIC_SCORING_WEIGHTS = {
     "weightShift": 15.0,
     "rotation": 15.0,
     "shaftLean": 0.0,
+    "swingPlane": 0.0,
 }
 
 

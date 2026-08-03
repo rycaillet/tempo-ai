@@ -236,6 +236,10 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             ]
             rotation = metrics["rotation"]
             rotation_feedback = rotation["feedback"]
+            swing_plane = metrics["swingPlane"]
+            swing_plane_feedback = swing_plane[
+                "feedback"
+            ]
 
             self.assertEqual(
                 summary["referenceFrameCount"],
@@ -963,6 +967,57 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                 rotation_feedback[
                     "deliveryStatus"
                 ],
+            )
+
+            self.assertEqual(
+                swing_plane["classification"],
+                "incomplete",
+            )
+            self.assertEqual(
+                swing_plane["measurementCompleteness"],
+                {
+                    "available": 0,
+                    "total": 6,
+                    "ratio": 0.0,
+                },
+            )
+            self.assertEqual(
+                swing_plane["confidence"],
+                0.0,
+            )
+            self.assertEqual(
+                swing_plane_feedback["status"],
+                "insufficient_data",
+            )
+            self.assertEqual(
+                swing_plane_feedback[
+                    "deliveryStatus"
+                ],
+                "displayed",
+            )
+            self.assertEqual(
+                summary["swingPlaneClassification"],
+                "incomplete",
+            )
+            self.assertEqual(
+                summary["swingPlaneConfidence"],
+                0.0,
+            )
+            self.assertEqual(
+                summary[
+                    "swingPlaneMeasurementCompleteness"
+                ],
+                0.0,
+            )
+            self.assertEqual(
+                summary["swingPlaneFeedbackStatus"],
+                "insufficient_data",
+            )
+            self.assertEqual(
+                summary[
+                    "swingPlaneFeedbackDeliveryStatus"
+                ],
+                "displayed",
             )
 
             self.assertEqual(
