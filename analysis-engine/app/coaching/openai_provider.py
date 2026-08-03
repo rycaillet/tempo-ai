@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping
 from typing import Any, Protocol
 
+import openai
 from openai import OpenAI
 
 from app.coaching.models import (
@@ -130,13 +131,156 @@ def build_coaching_response_schema() -> dict[str, object]:
     }
 
 
+def get_request_id(
+    value: Any,
+) -> str | None:
+    request_id = getattr(
+        value,
+        "request_id",
+        None,
+    )
+
+    if not isinstance(request_id, str):
+        request_id = getattr(
+            value,
+            "_request_id",
+            None,
+        )
+
+    return (
+        request_id
+        if isinstance(request_id, str)
+        and request_id
+        else None
+    )
+
+
+def get_response_status(
+    response: Any,
+) -> str | None:
+    status = getattr(response, "status", None)
+
+    return status if isinstance(status, str) else None
+
+
+def get_incomplete_reason(
+    response: Any,
+) -> str | None:
+    details = getattr(
+        response,
+        "incomplete_details",
+        None,
+    )
+
+    if isinstance(details, Mapping):
+        reason = details.get("reason")
+    else:
+        reason = getattr(details, "reason", None)
+
+    return reason if isinstance(reason, str) else None
+
+
+def get_refusal_text(
+    response: Any,
+) -> str | None:
+    output = getattr(response, "output", None)
+
+    if not isinstance(output, list):
+        return None
+
+    for item in output:
+        content = (
+            item.get("content")
+            if isinstance(item, Mapping)
+            else getattr(item, "content", None)
+        )
+
+        if not isinstance(content, list):
+            continue
+
+        for content_item in content:
+            if isinstance(content_item, Mapping):
+                content_type = content_item.get("type")
+                refusal = content_item.get("refusal")
+            else:
+                content_type = getattr(
+                    content_item,
+                    "type",
+                    None,
+                )
+                refusal = getattr(
+                    content_item,
+                    "refusal",
+                    None,
+                )
+
+            if (
+                content_type == "refusal"
+                and isinstance(refusal, str)
+                and refusal
+            ):
+                return refusal
+
+    return None
+
+
+def build_api_error(
+    error: Exception,
+) -> CoachingProviderError:
+    request_id = get_request_id(error)
+
+    if isinstance(error, openai.APITimeoutError):
+        return CoachingProviderError(
+            "OpenAI coaching request timed out.",
+            code="openai_timeout",
+            request_id=request_id,
+            retryable=True,
+        )
+
+    if isinstance(error, openai.RateLimitError):
+        return CoachingProviderError(
+            "OpenAI coaching request was rate limited.",
+            code="openai_rate_limit",
+            request_id=request_id,
+            retryable=True,
+        )
+
+    if isinstance(error, openai.APIConnectionError):
+        return CoachingProviderError(
+            "OpenAI coaching service could not be reached.",
+            code="openai_connection_error",
+            request_id=request_id,
+            retryable=True,
+        )
+
+    if isinstance(error, openai.APIStatusError):
+        status_code = error.status_code
+        retryable = (
+            status_code in {408, 409, 429}
+            or status_code >= 500
+        )
+
+        return CoachingProviderError(
+            "OpenAI coaching request returned an API error.",
+            code=f"openai_http_{status_code}",
+            request_id=request_id,
+            retryable=retryable,
+        )
+
+    return CoachingProviderError(
+        "OpenAI coaching request failed.",
+        code="openai_unexpected_error",
+        request_id=request_id,
+        retryable=False,
+    )
+
+
 class OpenAICoachingProvider:
     """
     OpenAI-backed implementation of the coaching provider contract.
 
-    Prompt construction, API communication, JSON parsing, and semantic
-    validation remain separate responsibilities even though they are
-    coordinated by this adapter.
+    Prompt construction, API communication, response-state handling,
+    JSON parsing, and semantic validation remain separate concerns.
     """
 
     def __init__(
@@ -171,7 +315,8 @@ class OpenAICoachingProvider:
             prompt = build_coaching_prompt(context)
         except CoachingPromptError as error:
             raise CoachingProviderError(
-                "OpenAI coaching prompt could not be built."
+                "OpenAI coaching prompt could not be built.",
+                code="prompt_construction_error",
             ) from error
 
         try:
@@ -192,9 +337,50 @@ class OpenAICoachingProvider:
                 },
             )
         except Exception as error:
+            raise build_api_error(error) from error
+
+        request_id = get_request_id(response)
+        response_status = get_response_status(response)
+
+        if response_status in {
+            "failed",
+            "cancelled",
+        }:
             raise CoachingProviderError(
-                "OpenAI coaching request failed."
-            ) from error
+                "OpenAI did not complete the coaching response.",
+                code=f"openai_response_{response_status}",
+                request_id=request_id,
+                retryable=False,
+            )
+
+        if response_status == "incomplete":
+            reason = (
+                get_incomplete_reason(response)
+                or "unknown"
+            )
+
+            raise CoachingProviderError(
+                "OpenAI returned an incomplete coaching response.",
+                code=f"openai_incomplete_{reason}",
+                request_id=request_id,
+                retryable=(
+                    reason
+                    in {
+                        "max_output_tokens",
+                        "max_tokens",
+                    }
+                ),
+            )
+
+        refusal = get_refusal_text(response)
+
+        if refusal is not None:
+            raise CoachingProviderError(
+                "OpenAI refused the coaching request.",
+                code="openai_refusal",
+                request_id=request_id,
+                retryable=False,
+            )
 
         output_text = getattr(
             response,
@@ -207,19 +393,25 @@ class OpenAICoachingProvider:
             or not output_text.strip()
         ):
             raise CoachingProviderError(
-                "OpenAI returned no coaching response text."
+                "OpenAI returned no coaching response text.",
+                code="openai_missing_output_text",
+                request_id=request_id,
             )
 
         try:
             raw_payload = json.loads(output_text)
         except json.JSONDecodeError as error:
             raise CoachingProviderError(
-                "OpenAI returned invalid coaching JSON."
+                "OpenAI returned invalid coaching JSON.",
+                code="openai_invalid_json",
+                request_id=request_id,
             ) from error
 
         if not isinstance(raw_payload, Mapping):
             raise CoachingProviderError(
-                "OpenAI coaching payload must be a JSON object."
+                "OpenAI coaching payload must be a JSON object.",
+                code="openai_invalid_payload_type",
+                request_id=request_id,
             )
 
         try:
@@ -230,5 +422,7 @@ class OpenAICoachingProvider:
         except CoachingResponseValidationError as error:
             raise CoachingProviderError(
                 "OpenAI returned an invalid or ungrounded "
-                "coaching response."
+                "coaching response.",
+                code="openai_validation_error",
+                request_id=request_id,
             ) from error

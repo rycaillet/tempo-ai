@@ -8,6 +8,10 @@ from app.coaching import (
     CoachingConfigurationError,
     CoachingSettings,
 )
+from app.coaching.config import (
+    DEFAULT_OPENAI_MAX_RETRIES,
+    DEFAULT_OPENAI_TIMEOUT_SECONDS,
+)
 
 
 class CoachingSettingsTests(unittest.TestCase):
@@ -25,6 +29,14 @@ class CoachingSettingsTests(unittest.TestCase):
             DEFAULT_OPENAI_MODEL,
         )
         self.assertIsNone(settings.openai_api_key)
+        self.assertEqual(
+            settings.openai_timeout_seconds,
+            DEFAULT_OPENAI_TIMEOUT_SECONDS,
+        )
+        self.assertEqual(
+            settings.openai_max_retries,
+            DEFAULT_OPENAI_MAX_RETRIES,
+        )
 
     def test_loads_mock_provider_configuration(
         self,
@@ -67,6 +79,8 @@ class CoachingSettingsTests(unittest.TestCase):
             {
                 "TEMPOAI_COACHING_PROVIDER": "openai",
                 "TEMPOAI_OPENAI_MODEL": "test-model",
+                "TEMPOAI_OPENAI_TIMEOUT_SECONDS": "45.5",
+                "TEMPOAI_OPENAI_MAX_RETRIES": "3",
                 "OPENAI_API_KEY": "test-key",
             }
         )
@@ -82,6 +96,14 @@ class CoachingSettingsTests(unittest.TestCase):
         self.assertEqual(
             settings.openai_api_key,
             "test-key",
+        )
+        self.assertEqual(
+            settings.openai_timeout_seconds,
+            45.5,
+        )
+        self.assertEqual(
+            settings.openai_max_retries,
+            3,
         )
 
     def test_rejects_unsupported_provider(
@@ -109,6 +131,38 @@ class CoachingSettingsTests(unittest.TestCase):
                     "TEMPOAI_OPENAI_MODEL": "   ",
                 }
             )
+
+    def test_rejects_invalid_timeout(
+        self,
+    ) -> None:
+        for value in ("0", "-1", "invalid"):
+            with self.subTest(value=value):
+                with self.assertRaises(
+                    CoachingConfigurationError
+                ):
+                    CoachingSettings.from_environment(
+                        {
+                            "TEMPOAI_OPENAI_TIMEOUT_SECONDS": (
+                                value
+                            ),
+                        }
+                    )
+
+    def test_rejects_invalid_retry_count(
+        self,
+    ) -> None:
+        for value in ("-1", "1.5", "invalid"):
+            with self.subTest(value=value):
+                with self.assertRaises(
+                    CoachingConfigurationError
+                ):
+                    CoachingSettings.from_environment(
+                        {
+                            "TEMPOAI_OPENAI_MAX_RETRIES": (
+                                value
+                            ),
+                        }
+                    )
 
     def test_requires_key_for_openai_provider(
         self,

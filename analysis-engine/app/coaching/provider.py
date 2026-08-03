@@ -10,9 +10,25 @@ from app.coaching.models import (
 
 class CoachingProviderError(RuntimeError):
     """
-    Base exception raised when a coaching provider cannot generate
-    a usable response.
+    Structured provider failure safe for application-level handling.
+
+    The message remains generic. Diagnostic fields may be logged by a
+    trusted server process but should not be exposed directly to users.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_error",
+        request_id: str | None = None,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+
+        self.code = code
+        self.request_id = request_id
+        self.retryable = retryable
 
 
 @runtime_checkable
