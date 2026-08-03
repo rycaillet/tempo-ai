@@ -86,6 +86,15 @@ TEMPORAL_IMAGE_SCORE_WEIGHT = 0.55
 TEMPORAL_ANGLE_SCORE_WEIGHT = 0.30
 TEMPORAL_DISTAL_SCORE_WEIGHT = 0.15
 
+PROVENANCE_CORRIDOR_PRIMARY_ADJUSTMENT = 0.03
+PROVENANCE_CORRIDOR_FALLBACK_ADJUSTMENT = 0.015
+PROVENANCE_ENHANCED_PRIMARY_ADJUSTMENT = -0.01
+PROVENANCE_ENHANCED_FALLBACK_ADJUSTMENT = -0.02
+PROVENANCE_RECTANGULAR_PRIMARY_ADJUSTMENT = -0.02
+PROVENANCE_RECTANGULAR_FALLBACK_ADJUSTMENT = -0.04
+PROVENANCE_MERGED_SEGMENT_BONUS_PER_EXTRA_SEGMENT = 0.005
+PROVENANCE_MAXIMUM_MERGED_SEGMENT_BONUS = 0.02
+
 
 class PixelPoint(TypedDict):
     x: float
@@ -99,6 +108,15 @@ class ShaftLine(TypedDict):
     angleDegrees: float
 
 
+class CandidateProvenance(TypedDict):
+    searchRegion: str
+    edgeSource: str
+    houghPass: str
+    segmentSource: str
+    sourceSegmentCount: int
+    scoreAdjustment: float
+
+
 class ShaftCandidate(TypedDict):
     line: ShaftLine
     handDistancePixels: float
@@ -106,13 +124,17 @@ class ShaftCandidate(TypedDict):
     nearestEndpointDistancePixels: float
     nearestEndpointDistanceRatio: float
     lengthRatio: float
+    baseImageScore: float
     score: float
+    provenance: CandidateProvenance
 
 
 class CandidateEvaluationDiagnostics(TypedDict):
     index: int
     line: ShaftLine
     imageScore: float
+    adjustedImageScore: float
+    provenance: CandidateProvenance
     temporalScore: float | None
     angleChangeDegrees: float | None
     distalShiftRatio: float | None
@@ -590,6 +612,61 @@ def create_candidate_diagnostics() -> CandidateDiagnostics:
     }
 
 
+
+def create_candidate_provenance(
+    *,
+    search_region: str,
+    edge_source: str,
+    hough_pass: str,
+    source_segment_count: int,
+) -> CandidateProvenance:
+    normalized_segment_count = max(1, int(source_segment_count))
+
+    adjustment = 0.0
+
+    if search_region == "corridor":
+        if edge_source == "enhanced":
+            adjustment = (
+                PROVENANCE_ENHANCED_PRIMARY_ADJUSTMENT
+                if hough_pass == "primary"
+                else PROVENANCE_ENHANCED_FALLBACK_ADJUSTMENT
+            )
+        else:
+            adjustment = (
+                PROVENANCE_CORRIDOR_PRIMARY_ADJUSTMENT
+                if hough_pass == "primary"
+                else PROVENANCE_CORRIDOR_FALLBACK_ADJUSTMENT
+            )
+    elif search_region == "rectangular":
+        adjustment = (
+            PROVENANCE_RECTANGULAR_PRIMARY_ADJUSTMENT
+            if hough_pass == "primary"
+            else PROVENANCE_RECTANGULAR_FALLBACK_ADJUSTMENT
+        )
+
+    merged_bonus = min(
+        PROVENANCE_MAXIMUM_MERGED_SEGMENT_BONUS,
+        (
+            normalized_segment_count - 1
+        ) * PROVENANCE_MERGED_SEGMENT_BONUS_PER_EXTRA_SEGMENT,
+    )
+
+    adjustment += merged_bonus
+
+    return {
+        "searchRegion": search_region,
+        "edgeSource": edge_source,
+        "houghPass": hough_pass,
+        "segmentSource": (
+            "merged"
+            if normalized_segment_count > 1
+            else "single"
+        ),
+        "sourceSegmentCount": normalized_segment_count,
+        "scoreAdjustment": round(adjustment, 6),
+    }
+
+
 def evaluate_shaft_candidate(
     coordinates: Sequence[int],
     *,
@@ -599,6 +676,7 @@ def evaluate_shaft_candidate(
     minimum_length_ratio: float = (
         MINIMUM_LINE_LENGTH_RATIO
     ),
+    provenance: CandidateProvenance | None = None,
 ) -> tuple[ShaftCandidate | None, str | None]:
     if len(coordinates) != 4:
         return None, "invalid_coordinates"
@@ -694,10 +772,30 @@ def evaluate_shaft_candidate(
         ),
     )
 
-    score = (
+    base_score = (
         0.42 * endpoint_proximity_score
         + 0.33 * segment_proximity_score
         + 0.25 * length_score
+    )
+
+    active_provenance = (
+        provenance
+        if provenance is not None
+        else create_candidate_provenance(
+            search_region="unknown",
+            edge_source="standard",
+            hough_pass="primary",
+            source_segment_count=1,
+        )
+    )
+
+    adjusted_score = min(
+        1.0,
+        max(
+            0.0,
+            base_score
+            + active_provenance["scoreAdjustment"],
+        ),
     )
 
     return {
@@ -736,10 +834,15 @@ def evaluate_shaft_candidate(
             length_ratio,
             6,
         ),
-        "score": round(
-            score,
+        "baseImageScore": round(
+            base_score,
             6,
         ),
+        "score": round(
+            adjusted_score,
+            6,
+        ),
+        "provenance": active_provenance,
     }, None
 
 
@@ -1010,7 +1113,7 @@ def _merge_segment_group(
     ]
 
 
-def merge_collinear_segments(
+def group_collinear_segments(
     coordinates: Sequence[Sequence[int]],
     *,
     frame_width: int,
@@ -1042,6 +1145,21 @@ def merge_collinear_segments(
                 break
         else:
             groups.append([normalized_segment])
+
+    return groups
+
+
+def merge_collinear_segments(
+    coordinates: Sequence[Sequence[int]],
+    *,
+    frame_width: int,
+    frame_height: int,
+) -> list[list[int]]:
+    groups = group_collinear_segments(
+        coordinates,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
 
     return [
         _merge_segment_group(group)
@@ -1238,6 +1356,9 @@ def run_hough_candidate_pass(
     diagnostics: CandidateDiagnostics,
     raw_count_key: str,
     merged_count_key: str,
+    search_region_type: str,
+    edge_source: str,
+    hough_pass: str,
 ) -> list[ShaftCandidate]:
     lines = cv2.HoughLinesP(
         edges,
@@ -1266,11 +1387,16 @@ def run_hough_candidate_pass(
         for line in lines
     ]
 
-    merged_coordinates = merge_collinear_segments(
+    segment_groups = group_collinear_segments(
         full_frame_coordinates,
         frame_width=frame_width,
         frame_height=frame_height,
     )
+
+    merged_coordinates = [
+        _merge_segment_group(group)
+        for group in segment_groups
+    ]
 
     diagnostics[merged_count_key] = len(
         merged_coordinates
@@ -1288,7 +1414,10 @@ def run_hough_candidate_pass(
 
     candidates: list[ShaftCandidate] = []
 
-    for coordinates in merged_coordinates:
+    for coordinates, segment_group in zip(
+        merged_coordinates,
+        segment_groups,
+    ):
         candidate, rejection_reason = (
             evaluate_shaft_candidate(
                 coordinates,
@@ -1297,6 +1426,12 @@ def run_hough_candidate_pass(
                 frame_height=frame_height,
                 minimum_length_ratio=(
                     minimum_candidate_length_ratio
+                ),
+                provenance=create_candidate_provenance(
+                    search_region=search_region_type,
+                    edge_source=edge_source,
+                    hough_pass=hough_pass,
+                    source_segment_count=len(segment_group),
                 ),
             )
         )
@@ -1453,6 +1588,9 @@ def detect_shaft_candidates(
                 merged_count_key=(
                     "corridorPrimaryMergedHoughLineCount"
                 ),
+                search_region_type="corridor",
+                edge_source="standard",
+                hough_pass="primary",
             )
         )
 
@@ -1510,6 +1648,9 @@ def detect_shaft_candidates(
                 merged_count_key=(
                     "corridorFallbackMergedHoughLineCount"
                 ),
+                search_region_type="corridor",
+                edge_source="standard",
+                hough_pass="fallback",
             )
         )
 
@@ -1601,6 +1742,9 @@ def detect_shaft_candidates(
                 merged_count_key=(
                     "enhancedCorridorPrimaryMergedHoughLineCount"
                 ),
+                search_region_type="corridor",
+                edge_source="enhanced",
+                hough_pass="primary",
             )
         )
 
@@ -1670,6 +1814,9 @@ def detect_shaft_candidates(
                 merged_count_key=(
                     "enhancedCorridorFallbackMergedHoughLineCount"
                 ),
+                search_region_type="corridor",
+                edge_source="enhanced",
+                hough_pass="fallback",
             )
         )
 
@@ -1744,6 +1891,9 @@ def detect_shaft_candidates(
             merged_count_key=(
                 "rectangularPrimaryMergedHoughLineCount"
             ),
+            search_region_type="rectangular",
+            edge_source="standard",
+            hough_pass="primary",
         )
     )
 
@@ -1823,6 +1973,9 @@ def detect_shaft_candidates(
             merged_count_key=(
                 "rectangularFallbackMergedHoughLineCount"
             ),
+            search_region_type="rectangular",
+            edge_source="standard",
+            hough_pass="fallback",
         )
     )
 
@@ -2142,7 +2295,9 @@ def build_candidate_evaluation_diagnostics(
     return {
         "index": index,
         "line": candidate["line"],
-        "imageScore": candidate["score"],
+        "imageScore": candidate["baseImageScore"],
+        "adjustedImageScore": candidate["score"],
+        "provenance": candidate["provenance"],
         "temporalScore": temporal_score,
         "angleChangeDegrees": (
             angle_change_degrees
@@ -3130,7 +3285,9 @@ def analyze_club_detection(
                 "count, image-filter rejection totals, and "
                 "a serializable record for every candidate "
                 "evaluated during image-only or temporal "
-                "selection."
+                "selection. Candidate records also preserve "
+                "search-region, edge-source, Hough-pass, and "
+                "segment-merging provenance."
             ),
             "visualizations": (
                 "Debug images show the selected "
