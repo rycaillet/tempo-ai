@@ -25,6 +25,9 @@ from app.metrics.registry import (
 from app.metrics.rotation import (
     build_rotation_metrics,
 )
+from app.metrics.swing_plane import (
+    build_swing_plane_metrics,
+)
 from app.metrics.weight_shift import (
     build_weight_shift_metrics,
 )
@@ -40,6 +43,7 @@ __all__ = [
     "build_registered_metric_summary",
     "build_registered_metrics",
     "build_rotation_metrics",
+    "build_swing_plane_metrics",
     "build_weight_shift_metrics",
     "get_enabled_metric_registrations",
     "get_registered_metric_keys",
