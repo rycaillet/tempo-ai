@@ -9,6 +9,52 @@ class CoachingContextTests(unittest.TestCase):
     @staticmethod
     def build_report() -> dict[str, object]:
         return {
+            "metrics": {
+                "shaftLean": {
+                    "measurements": {
+                        "signedLeanFromVerticalDegrees": 118.715,
+                        "cameraRelativeDirection": "image_right",
+                        "shaftGeometrySource": "raw",
+                        "clubDetectionConfidence": 0.777,
+                    },
+                    "classification": "observed",
+                    "confidence": 0.686,
+                    "feedback": {
+                        "status": "measurement_only",
+                        "basis": (
+                            "Shaft lean is camera-relative and does "
+                            "not yet identify true forward or backward "
+                            "lean."
+                        ),
+                    },
+                },
+                "swingPlane": {
+                    "measurements": {
+                        "phaseChangesDegrees": {
+                            "addressToTakeawayDegrees": 3.757,
+                            "topToImpactDegrees": 19.373,
+                        },
+                        "smoothedReferenceCount": 4,
+                        "trackedReferenceCount": 1,
+                        "averageDetectionConfidence": 0.710,
+                    },
+                    "measurementCompleteness": {
+                        "available": 6,
+                        "total": 6,
+                        "ratio": 1.0,
+                    },
+                    "classification": "observed",
+                    "confidence": 0.710,
+                    "feedback": {
+                        "status": "measurement_only",
+                        "basis": (
+                            "Swing plane is a two-dimensional "
+                            "camera-relative shaft trajectory, not a "
+                            "true three-dimensional plane."
+                        ),
+                    },
+                },
+            },
             "scoring": {
                 "overallScore": 85.06,
                 "scoreConfidence": 100.0,
@@ -217,6 +263,99 @@ class CoachingContextTests(unittest.TestCase):
             context.limitations,
         )
 
+    def test_builds_observational_metric_context(
+        self,
+    ) -> None:
+        context = build_coach_context(
+            self.build_report()
+        )
+
+        self.assertEqual(
+            [
+                observation.metric_key
+                for observation in context.observations
+            ],
+            ["shaftLean", "swingPlane"],
+        )
+
+        shaft_lean = context.observations[0]
+        swing_plane = context.observations[1]
+
+        self.assertEqual(
+            shaft_lean.status,
+            "measurement_only",
+        )
+        self.assertEqual(
+            shaft_lean.confidence,
+            0.686,
+        )
+        self.assertIn(
+            "image_right",
+            shaft_lean.summary,
+        )
+        self.assertEqual(
+            swing_plane.confidence,
+            0.71,
+        )
+        self.assertIn(
+            "6 of 6",
+            swing_plane.summary,
+        )
+
+    def test_observations_do_not_change_primary_priority(
+        self,
+    ) -> None:
+        context = build_coach_context(
+            self.build_report()
+        )
+
+        self.assertEqual(
+            context.primary_focus_metric_key,
+            "addressPosture",
+        )
+        self.assertEqual(
+            context.priorities[0].metric_key,
+            "addressPosture",
+        )
+        self.assertNotIn(
+            "shaftLean",
+            [
+                priority.metric_key
+                for priority in context.priorities
+            ],
+        )
+        self.assertNotIn(
+            "swingPlane",
+            [
+                priority.metric_key
+                for priority in context.priorities
+            ],
+        )
+
+    def test_observation_limitations_are_preserved(
+        self,
+    ) -> None:
+        context = build_coach_context(
+            self.build_report()
+        )
+
+        self.assertIn(
+            (
+                "Shaft lean is camera-relative and does "
+                "not yet identify true forward or backward "
+                "lean."
+            ),
+            context.limitations,
+        )
+        self.assertIn(
+            (
+                "Swing plane is a two-dimensional "
+                "camera-relative shaft trajectory, not a "
+                "true three-dimensional plane."
+            ),
+            context.limitations,
+        )
+
     def test_detects_recommendation_order_mismatch(
         self,
     ) -> None:
@@ -321,10 +460,10 @@ class CoachingContextTests(unittest.TestCase):
         self,
     ) -> None:
         report = self.build_report()
-        report["metrics"] = {
-            "rawMetric": {
-                "landmarks": [1, 2, 3],
-            },
+        metrics = report["metrics"]
+        self.assertIsInstance(metrics, dict)
+        metrics["rawMetric"] = {
+            "landmarks": [1, 2, 3],
         }
         report["referenceGeometry"] = {
             "addressReference": {
@@ -345,6 +484,14 @@ class CoachingContextTests(unittest.TestCase):
             result,
         )
         self.assertNotIn("landmarks", result)
+        self.assertIn("observations", result)
+        self.assertEqual(
+            [
+                observation["metricKey"]
+                for observation in result["observations"]
+            ],
+            ["shaftLean", "swingPlane"],
+        )
 
 
 if __name__ == "__main__":

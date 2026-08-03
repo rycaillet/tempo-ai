@@ -61,13 +61,66 @@ class CoachPriority:
 
 
 @dataclass(frozen=True)
+class CoachObservationFact:
+    """
+    One compact deterministic fact from an unscored metric.
+
+    Facts are intentionally limited to already-computed values and
+    provenance. They are not coaching conclusions or recommendations.
+    """
+
+    key: str
+    label: str
+    value: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "key": self.key,
+            "label": self.label,
+            "value": self.value,
+        }
+
+
+@dataclass(frozen=True)
+class CoachObservation:
+    """
+    Compact provider-safe observation from an unscored metric.
+
+    Observations may support descriptive coaching language but cannot
+    become a primary priority or justify drills on their own.
+    """
+
+    metric_key: str
+    display_name: str
+    status: str
+    confidence: float | None
+    summary: str
+    facts: tuple[CoachObservationFact, ...]
+    limitations: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "metricKey": self.metric_key,
+            "displayName": self.display_name,
+            "status": self.status,
+            "confidence": self.confidence,
+            "summary": self.summary,
+            "facts": [
+                fact.to_dict()
+                for fact in self.facts
+            ],
+            "limitations": list(self.limitations),
+        }
+
+
+@dataclass(frozen=True)
 class CoachContext:
     """
     Provider-independent context for generating AI coaching language.
 
-    This model intentionally excludes raw frames, landmarks, geometry,
-    and low-level metric measurements. An AI provider receives only
-    deterministic conclusions produced by the analysis engine.
+    This model excludes raw frames, landmarks, geometry, and detector
+    internals. An AI provider receives deterministic conclusions,
+    catalog-backed priorities, and compact unscored observations.
     """
 
     status: str
@@ -83,6 +136,7 @@ class CoachContext:
     priorities: tuple[CoachPriority, ...]
     warnings: tuple[str, ...]
     limitations: tuple[str, ...]
+    observations: tuple[CoachObservation, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -104,6 +158,10 @@ class CoachContext:
             "priorities": [
                 priority.to_dict()
                 for priority in self.priorities
+            ],
+            "observations": [
+                observation.to_dict()
+                for observation in self.observations
             ],
             "warnings": list(self.warnings),
             "limitations": list(self.limitations),

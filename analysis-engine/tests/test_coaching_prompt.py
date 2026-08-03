@@ -11,6 +11,10 @@ from app.coaching import (
     CoachingPromptError,
     build_coaching_prompt,
 )
+from app.coaching.models import (
+    CoachObservation,
+    CoachObservationFact,
+)
 
 
 class CoachingPromptTests(unittest.TestCase):
@@ -77,6 +81,48 @@ class CoachingPromptTests(unittest.TestCase):
             limitations=(
                 "Video analysis cannot directly measure force.",
             ),
+            observations=(
+                CoachObservation(
+                    metric_key="shaftLean",
+                    display_name="Shaft lean",
+                    status="measurement_only",
+                    confidence=0.686,
+                    summary=(
+                        "At impact, the detected shaft leaned "
+                        "image_right relative to image vertical."
+                    ),
+                    facts=(
+                        CoachObservationFact(
+                            key="shaftGeometrySource",
+                            label="Shaft geometry source",
+                            value="raw",
+                        ),
+                    ),
+                    limitations=(
+                        "Shaft lean is camera-relative.",
+                    ),
+                ),
+                CoachObservation(
+                    metric_key="swingPlane",
+                    display_name="Swing plane",
+                    status="measurement_only",
+                    confidence=0.710,
+                    summary=(
+                        "Camera-relative shaft angles were available "
+                        "for 6 of 6 reference phases."
+                    ),
+                    facts=(
+                        CoachObservationFact(
+                            key="topToImpactDegrees",
+                            label="Top to impact",
+                            value="19.373 degrees",
+                        ),
+                    ),
+                    limitations=(
+                        "Swing plane is not a true 3D plane.",
+                    ),
+                ),
+            ),
         )
 
     def test_builds_versioned_prompt(
@@ -127,6 +173,34 @@ class CoachingPromptTests(unittest.TestCase):
             "addressPosture",
         )
 
+    def test_prompt_contains_observational_metrics(
+        self,
+    ) -> None:
+        prompt = build_coaching_prompt(
+            self.build_context()
+        )
+
+        payload = json.loads(prompt.user_message)
+        observations = payload[
+            "coachingContext"
+        ]["observations"]
+
+        self.assertEqual(
+            [
+                observation["metricKey"]
+                for observation in observations
+            ],
+            ["shaftLean", "swingPlane"],
+        )
+        self.assertEqual(
+            observations[0]["status"],
+            "measurement_only",
+        )
+        self.assertEqual(
+            observations[1]["facts"][0]["key"],
+            "topToImpactDegrees",
+        )
+
     def test_prompt_contains_required_response_schema(
         self,
     ) -> None:
@@ -173,6 +247,10 @@ class CoachingPromptTests(unittest.TestCase):
             "phaseFrames",
             prompt.user_message,
         )
+        self.assertNotIn(
+            "shaftLine",
+            prompt.user_message,
+        )
 
     def test_prompt_includes_ordered_coaching_instructions(
         self,
@@ -190,7 +268,7 @@ class CoachingPromptTests(unittest.TestCase):
 
         self.assertEqual(
             len(instructions),
-            7,
+            8,
         )
         self.assertIn(
             "first coaching priority",
@@ -201,16 +279,20 @@ class CoachingPromptTests(unittest.TestCase):
             instructions[1],
         )
         self.assertIn(
-            "practice cues",
+            "observations",
             instructions[3],
         )
         self.assertIn(
+            "practice cues",
+            instructions[4],
+        )
+        self.assertIn(
             "sourceMetricKeys",
-            instructions[5],
+            instructions[6],
         )
         self.assertIn(
             "required JSON object",
-            instructions[6],
+            instructions[7],
         )
 
     def test_system_message_protects_primary_priority(
@@ -230,6 +312,30 @@ class CoachingPromptTests(unittest.TestCase):
         )
         self.assertIn(
             "Do not overwhelm the golfer with unrelated changes",
+            prompt.system_message,
+        )
+
+    def test_system_message_limits_observational_metrics(
+        self,
+    ) -> None:
+        prompt = build_coaching_prompt(
+            self.build_context()
+        )
+
+        self.assertIn(
+            "Observations are unscored, measurement-only context",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Do not promote an observation into a coaching priority",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Do not create a drill, fault diagnosis, or causal claim",
+            prompt.system_message,
+        )
+        self.assertIn(
+            "Preserve each observation's limitations",
             prompt.system_message,
         )
 

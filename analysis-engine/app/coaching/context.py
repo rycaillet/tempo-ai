@@ -5,6 +5,8 @@ from typing import Any
 
 from app.coaching.models import (
     CoachContext,
+    CoachObservation,
+    CoachObservationFact,
     CoachPriority,
     CoachStrength,
 )
@@ -79,6 +81,17 @@ def get_mapping(
         return value
 
     return {}
+
+
+def format_number(
+    value: float | None,
+    *,
+    digits: int = 3,
+) -> str | None:
+    if value is None:
+        return None
+
+    return f"{value:.{digits}f}"
 
 
 def build_coach_strength(
@@ -223,10 +236,272 @@ def extract_metric_keys(
     return metric_keys
 
 
+def build_shaft_lean_observation(
+    metrics: Mapping[str, Any],
+) -> CoachObservation | None:
+    raw_metric = metrics.get("shaftLean")
+
+    if not isinstance(raw_metric, Mapping):
+        return None
+
+    measurements = get_mapping(
+        raw_metric.get("measurements")
+    )
+    feedback = get_mapping(
+        raw_metric.get("feedback")
+    )
+
+    lean = normalize_number(
+        measurements.get(
+            "signedLeanFromVerticalDegrees"
+        )
+    )
+    direction = normalize_string(
+        measurements.get(
+            "cameraRelativeDirection"
+        )
+    )
+    geometry_source = normalize_string(
+        measurements.get(
+            "shaftGeometrySource"
+        )
+    )
+    detection_confidence = normalize_number(
+        measurements.get(
+            "clubDetectionConfidence"
+        )
+    )
+
+    if lean is None or direction is None:
+        return None
+
+    facts: list[CoachObservationFact] = [
+        CoachObservationFact(
+            key="signedLeanFromVerticalDegrees",
+            label="Signed lean from image vertical",
+            value=f"{lean:.3f} degrees",
+        ),
+        CoachObservationFact(
+            key="cameraRelativeDirection",
+            label="Camera-relative direction",
+            value=direction,
+        ),
+    ]
+
+    if geometry_source is not None:
+        facts.append(
+            CoachObservationFact(
+                key="shaftGeometrySource",
+                label="Shaft geometry source",
+                value=geometry_source,
+            )
+        )
+
+    if detection_confidence is not None:
+        facts.append(
+            CoachObservationFact(
+                key="clubDetectionConfidence",
+                label="Club detection confidence",
+                value=f"{detection_confidence:.3f}",
+            )
+        )
+
+    basis = normalize_string(
+        feedback.get("basis")
+    )
+
+    limitations = (
+        (basis,)
+        if basis is not None
+        else ()
+    )
+
+    return CoachObservation(
+        metric_key="shaftLean",
+        display_name="Shaft lean",
+        status=(
+            normalize_string(
+                feedback.get("status")
+            )
+            or "measurement_only"
+        ),
+        confidence=normalize_number(
+            raw_metric.get("confidence")
+        ),
+        summary=(
+            "At impact, the detected shaft leaned "
+            f"{direction} by {abs(lean):.3f} degrees "
+            "relative to image vertical."
+        ),
+        facts=tuple(facts),
+        limitations=limitations,
+    )
+
+
+def build_swing_plane_observation(
+    metrics: Mapping[str, Any],
+) -> CoachObservation | None:
+    raw_metric = metrics.get("swingPlane")
+
+    if not isinstance(raw_metric, Mapping):
+        return None
+
+    measurements = get_mapping(
+        raw_metric.get("measurements")
+    )
+    completeness = get_mapping(
+        raw_metric.get("measurementCompleteness")
+    )
+    feedback = get_mapping(
+        raw_metric.get("feedback")
+    )
+    phase_changes = get_mapping(
+        measurements.get("phaseChangesDegrees")
+    )
+
+    available = normalize_number(
+        completeness.get("available")
+    )
+    total = normalize_number(
+        completeness.get("total")
+    )
+    ratio = normalize_number(
+        completeness.get("ratio")
+    )
+    average_confidence = normalize_number(
+        measurements.get(
+            "averageDetectionConfidence"
+        )
+    )
+    smoothed_count = normalize_number(
+        measurements.get(
+            "smoothedReferenceCount"
+        )
+    )
+    tracked_count = normalize_number(
+        measurements.get(
+            "trackedReferenceCount"
+        )
+    )
+
+    if available is None or total is None:
+        return None
+
+    facts: list[CoachObservationFact] = [
+        CoachObservationFact(
+            key="referencePhaseCoverage",
+            label="Reference phase coverage",
+            value=f"{int(available)} of {int(total)}",
+        ),
+    ]
+
+    if ratio is not None:
+        facts.append(
+            CoachObservationFact(
+                key="measurementCompleteness",
+                label="Measurement completeness",
+                value=f"{ratio:.3f}",
+            )
+        )
+
+    if smoothed_count is not None:
+        facts.append(
+            CoachObservationFact(
+                key="smoothedReferenceCount",
+                label="Smoothed reference phases",
+                value=str(int(smoothed_count)),
+            )
+        )
+
+    if tracked_count is not None:
+        facts.append(
+            CoachObservationFact(
+                key="trackedReferenceCount",
+                label="Tracked reference phases",
+                value=str(int(tracked_count)),
+            )
+        )
+
+    for key in (
+        "addressToTakeawayDegrees",
+        "takeawayToTopDegrees",
+        "topToDownswingStartDegrees",
+        "downswingStartToImpactDegrees",
+        "impactToFinishDegrees",
+        "topToImpactDegrees",
+    ):
+        value = normalize_number(
+            phase_changes.get(key)
+        )
+
+        if value is None:
+            continue
+
+        facts.append(
+            CoachObservationFact(
+                key=key,
+                label=key,
+                value=f"{value:.3f} degrees",
+            )
+        )
+
+    basis = normalize_string(
+        feedback.get("basis")
+    )
+
+    limitations = (
+        (basis,)
+        if basis is not None
+        else ()
+    )
+
+    return CoachObservation(
+        metric_key="swingPlane",
+        display_name="Swing plane",
+        status=(
+            normalize_string(
+                feedback.get("status")
+            )
+            or "measurement_only"
+        ),
+        confidence=(
+            normalize_number(
+                raw_metric.get("confidence")
+            )
+            or average_confidence
+        ),
+        summary=(
+            "Camera-relative shaft angles were available "
+            f"for {int(available)} of {int(total)} "
+            "reference phases."
+        ),
+        facts=tuple(facts),
+        limitations=limitations,
+    )
+
+
+def build_coach_observations(
+    metrics: Mapping[str, Any],
+) -> tuple[CoachObservation, ...]:
+    observations: list[CoachObservation] = []
+
+    for builder in (
+        build_shaft_lean_observation,
+        build_swing_plane_observation,
+    ):
+        observation = builder(metrics)
+
+        if observation is not None:
+            observations.append(observation)
+
+    return tuple(observations)
+
+
 def build_analysis_limitations(
     *,
     scoring: Mapping[str, Any],
     priorities: tuple[CoachPriority, ...],
+    observations: tuple[CoachObservation, ...],
 ) -> list[str]:
     """
     Build compact limitations relevant to AI-generated coaching.
@@ -276,6 +551,13 @@ def build_analysis_limitations(
                 priority.caution,
             )
 
+    for observation in observations:
+        for limitation in observation.limitations:
+            append_unique(
+                limitations,
+                limitation,
+            )
+
     return limitations
 
 
@@ -299,6 +581,7 @@ def build_coach_context(
     recommendations_section = get_mapping(
         report.get("recommendations")
     )
+    metrics = get_mapping(report.get("metrics"))
 
     warnings: list[str] = []
 
@@ -440,10 +723,14 @@ def build_coach_context(
         )
 
     normalized_priorities = tuple(priorities)
+    observations = build_coach_observations(
+        metrics
+    )
 
     limitations = build_analysis_limitations(
         scoring=scoring,
         priorities=normalized_priorities,
+        observations=observations,
     )
 
     ready = (
@@ -483,4 +770,5 @@ def build_coach_context(
         priorities=normalized_priorities,
         warnings=tuple(warnings),
         limitations=tuple(limitations),
+        observations=observations,
     )
