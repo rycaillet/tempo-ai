@@ -195,7 +195,6 @@ class ClubSegmentMergingTests(
             result,
             [],
         )
-        
 
     @patch(
         "app.club_detector.cv2.HoughLinesP"
