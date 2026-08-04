@@ -20,6 +20,7 @@ import { Link, useParams } from "react-router-dom";
 
 import AnalysisSkeleton from "../components/analysis/AnalysisSkeleton";
 import PhaseCoachPanel from "../components/analysis/PhaseCoachPanel";
+import SwingTimeline from "../components/analysis/SwingTimeline";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Container from "../components/ui/Container";
@@ -229,6 +230,40 @@ function AnalysisPage() {
 
     video.currentTime = phaseTime;
     setCurrentTime(phaseTime);
+  }
+
+  function handleTimelineSeek(
+    timeSeconds: number,
+  ) {
+    const video = videoRef.current;
+
+    if (
+      !video ||
+      !Number.isFinite(timeSeconds)
+    ) {
+      return;
+    }
+
+    const nextTime =
+      videoDuration > 0
+        ? Math.min(
+            videoDuration,
+            Math.max(0, timeSeconds),
+          )
+        : Math.max(0, timeSeconds);
+
+    video.currentTime = nextTime;
+    setCurrentTime(nextTime);
+
+    const currentPhase = findCurrentPhase(
+      swingPhases,
+      nextTime,
+      videoDuration,
+    );
+
+    if (currentPhase) {
+      setSelectedPhaseId(currentPhase.id);
+    }
   }
 
   async function handlePlay() {
@@ -445,77 +480,14 @@ function AnalysisPage() {
               )}
 
               <div className="border-t border-white/10 px-5 py-5">
-                <p className="mb-4 text-xs leading-5 text-copy-subtle">
-                  Phase markers were detected by the
-                  TempoAI analysis engine and can be
-                  used to navigate the swing.
-                </p>
-
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                  {swingPhases.map((phase) => {
-                    const isSelected =
-                      phase.id ===
-                      selectedPhase.id;
-
-                    const phaseTime = getPhaseTime(
-                      phase,
-                      videoDuration,
-                    );
-
-                    return (
-                      <button
-                        key={phase.id}
-                        aria-label={`Jump to detected ${phase.label} phase`}
-                        aria-pressed={isSelected}
-                        className={[
-                          "group rounded-2xl border px-3 py-3 text-center transition",
-                          isSelected
-                            ? "border-lime-soft/40 bg-lime-soft/10"
-                            : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]",
-                        ].join(" ")}
-                        type="button"
-                        onClick={() =>
-                          handlePhaseSelect(
-                            phase,
-                          )
-                        }
-                      >
-                        <span
-                          className={[
-                            "mx-auto block size-2.5 rounded-full transition",
-                            isSelected
-                              ? "scale-125 bg-lime-soft shadow-[0_0_12px_rgba(132,255,77,0.7)]"
-                              : "bg-copy-subtle group-hover:bg-white",
-                          ].join(" ")}
-                        />
-
-                        <span
-                          className={[
-                            "mt-2 block text-[10px] font-semibold uppercase tracking-[0.14em] transition",
-                            isSelected
-                              ? "text-lime-soft"
-                              : "text-copy-subtle group-hover:text-white",
-                          ].join(" ")}
-                        >
-                          {phase.label}
-                        </span>
-
-                        <span
-                          className={[
-                            "mt-1 block text-[10px]",
-                            isSelected
-                              ? "text-white"
-                              : "text-copy-subtle",
-                          ].join(" ")}
-                        >
-                          {formatPlaybackTime(
-                            phaseTime,
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <SwingTimeline
+                  phases={swingPhases}
+                  currentTime={currentTime}
+                  duration={videoDuration}
+                  selectedPhaseId={selectedPhase.id}
+                  onPhaseSelect={handlePhaseSelect}
+                  onSeek={handleTimelineSeek}
+                />
               </div>
             </Panel>
 
