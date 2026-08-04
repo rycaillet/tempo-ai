@@ -1,6 +1,7 @@
 import { mapBackendAnalysis } from "../mappers/analysisMapper";
 import type { SwingAnalysis } from "../types/analysis";
 import type {
+  BackendAnalysisPayload,
   BackendAnalysisReport,
   BackendPhaseFrames,
   LegacyPhaseTimings,
@@ -37,6 +38,7 @@ export type AnalysisRecord = {
     | BackendPhaseFrames
     | LegacyPhaseTimings
     | null;
+  analysisPayload: BackendAnalysisPayload | null;
   analysisReport: BackendAnalysisReport | null;
   createdAt: string;
   updatedAt: string;
@@ -159,6 +161,12 @@ export async function getAnalysis(
   if (record.status !== "COMPLETED") {
     throw new Error(
       "The swing analysis is not complete yet.",
+    );
+  }
+
+  if (!record.analysisPayload) {
+    throw new Error(
+      "The completed swing analysis does not contain a public analysis payload.",
     );
   }
 

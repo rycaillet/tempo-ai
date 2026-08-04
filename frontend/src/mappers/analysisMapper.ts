@@ -10,6 +10,7 @@ import type {
   SwingPhase,
 } from "../types/analysis";
 import type {
+  BackendAnalysisPayload,
   BackendAnalysisReport,
   BackendImprovementPriority,
   BackendMetricKey,
@@ -31,6 +32,8 @@ const metricDisplayNames: Record<
   weightShift: "Weight Shift",
   earlyExtension: "Early Extension",
   rotation: "Rotation",
+  shaftLean: "Shaft Lean",
+  swingPlane: "Swing Plane",
 };
 
 const metricPhaseNames: Record<
@@ -44,6 +47,8 @@ const metricPhaseNames: Record<
   weightShift: "Downswing",
   earlyExtension: "Downswing",
   rotation: "Backswing and Downswing",
+  shaftLean: "Impact",
+  swingPlane: "Throughout Swing",
 };
 
 const metricDescriptions: Record<
@@ -64,6 +69,10 @@ const metricDescriptions: Record<
     "Measures whether the hips move toward the ball during the downswing.",
   rotation:
     "Evaluates measured shoulder and hip movement through the swing.",
+  shaftLean:
+    "Measures the detected shaft direction relative to image vertical at impact.",
+  swingPlane:
+    "Measures the camera-relative shaft trajectory across reference phases.",
 };
 
 const metricOrder: BackendMetricKey[] = [
@@ -261,10 +270,56 @@ function createMetricDescription(
 function mapMetrics(
   record: AnalysisRecord,
 ): SwingMetric[] {
+  const payloadMetrics =
+    record.analysisPayload?.metrics ?? [];
+
+  const payloadByKey = new Map(
+    payloadMetrics.flatMap((metric) => {
+      if (!metric.metricKey) {
+        return [];
+      }
+
+      return [[metric.metricKey, metric] as const];
+    }),
+  );
+
+  const mappedMetrics = metricOrder.flatMap(
+    (metricKey): SwingMetric[] => {
+      const metric = payloadByKey.get(metricKey);
+
+      if (
+        !metric ||
+        typeof metric.score !== "number"
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          id: metricKey,
+          label:
+            metric.displayName ??
+            metricDisplayNames[metricKey],
+          score: clampScore(metric.score),
+          description: createMetricDescription(
+            metricKey,
+            metric.classification ?? undefined,
+            null,
+            record,
+          ),
+        },
+      ];
+    },
+  );
+
+  if (mappedMetrics.length > 0) {
+    return mappedMetrics;
+  }
+
   const reportMetrics =
     record.analysisReport?.scoring?.metrics;
 
-  const mappedMetrics = metricOrder.flatMap(
+  const legacyMetrics = metricOrder.flatMap(
     (metricKey): SwingMetric[] => {
       const metric = reportMetrics?.[metricKey];
 
@@ -291,8 +346,8 @@ function mapMetrics(
     },
   );
 
-  if (mappedMetrics.length > 0) {
-    return mappedMetrics;
+  if (legacyMetrics.length > 0) {
+    return legacyMetrics;
   }
 
   if (record.consistencyScore !== null) {
@@ -425,10 +480,11 @@ function mapPriorityToFinding(
 function mapFindings(
   record: AnalysisRecord,
 ): SwingFinding[] {
-  const report = record.analysisReport;
+  const payload = record.analysisPayload;
 
   const recommendations =
-    report?.recommendations?.recommendations;
+    payload?.recommendations?.items ??
+    record.analysisReport?.recommendations?.recommendations;
 
   if (
     recommendations &&
@@ -444,7 +500,8 @@ function mapFindings(
   }
 
   const improvementPriorities =
-    report?.findings?.improvementPriorities;
+    payload?.findings?.improvementPriorities ??
+    record.analysisReport?.findings?.improvementPriorities;
 
   if (
     improvementPriorities &&
@@ -635,6 +692,7 @@ function mapPhases(
 function createCoachingSummary(
   record: AnalysisRecord,
 ) {
+  const payload = record.analysisPayload;
   const report = record.analysisReport;
 
   const storedSummary = [
@@ -648,6 +706,9 @@ function createCoachingSummary(
     .join(" ");
 
   return (
+    payload?.coaching?.overview ??
+    payload?.findings?.overallFinding ??
+    payload?.score?.summary ??
     report?.coaching?.overview ??
     report?.findings?.overallFinding ??
     report?.scoring?.interpretation?.summary ??
@@ -660,6 +721,8 @@ function createStrengthSummary(
   record: AnalysisRecord,
 ) {
   const strongestFinding =
+    record.analysisPayload?.findings
+      ?.strengths?.[0] ??
     record.analysisReport?.findings
       ?.strengths?.[0];
 
@@ -696,10 +759,12 @@ function createStrengthSummary(
 }
 
 function mapPracticePlan(
+  payload: BackendAnalysisPayload | null,
   report: BackendAnalysisReport | null,
   storedRecommendation: string | null,
 ): PracticePlanItem[] {
   const recommendations =
+    payload?.recommendations?.items ??
     report?.recommendations?.recommendations;
 
   if (
@@ -738,13 +803,7 @@ function mapPracticePlan(
         label: "Warm-up",
         duration: "5 minutes",
         instructions:
-          report?.coaching?.actionSteps
-            ?.filter(
-              (actionStep) =>
-                actionStep.trim().length > 0,
-            )
-            .join(" ") ||
-          "Begin with slow-motion rehearsals of the primary movement priority.",
+          "Begin with easy half-speed swings to establish rhythm, balance, and a comfortable range of motion before working on the measured priorities.",
       },
       ...recommendationItems,
       {
@@ -757,6 +816,10 @@ function mapPracticePlan(
   }
 
   const actionSteps =
+    payload?.coaching?.actionSteps?.filter(
+      (actionStep) =>
+        actionStep.trim().length > 0,
+    ) ??
     report?.coaching?.actionSteps?.filter(
       (actionStep) =>
         actionStep.trim().length > 0,
@@ -802,6 +865,8 @@ export function mapBackendAnalysis(
   const findings = mapFindings(record);
 
   const overallScore =
+    record.analysisPayload?.score
+      ?.overallScore ??
     record.analysisReport?.scoring
       ?.overallScore ??
     record.swingScore ??
@@ -827,6 +892,11 @@ export function mapBackendAnalysis(
       ),
       overallScore:
         clampScore(overallScore),
+      ratingLabel:
+        record.analysisPayload?.score?.ratingLabel ??
+        record.analysisReport?.scoring
+          ?.interpretation?.ratingLabel ??
+        null,
       summary: coachingSummary,
       strength:
         createStrengthSummary(record),
@@ -839,6 +909,7 @@ export function mapBackendAnalysis(
     metrics: mapMetrics(record),
     findings,
     practicePlan: mapPracticePlan(
+      record.analysisPayload,
       record.analysisReport,
       record.recommendation,
     ),

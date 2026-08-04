@@ -473,9 +473,8 @@ function AnalysisPage() {
               >
                 <ScoreRing
                   label="Swing score"
-                  score={
-                    analysisSummary.overallScore
-                  }
+                  score={analysisSummary.overallScore}
+                  rating={analysisSummary.ratingLabel}
                   subtitle={
                     analysisSummary.change ??
                     "Production engine result"
