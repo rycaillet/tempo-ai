@@ -1,5 +1,6 @@
 import type { AnalysisRecord } from "../services/analysisService";
 import type {
+  ClubAnalysis,
   FindingSeverity,
   PhaseCoaching,
   PoseVariant,
@@ -855,6 +856,142 @@ function mapPracticePlan(
   return [];
 }
 
+function normalizeOptionalNumber(
+  value: number | null | undefined,
+): number | null {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value)
+  ) {
+    return null;
+  }
+
+  return value;
+}
+
+function mapClubAnalysis(
+  payload: BackendAnalysisPayload | null,
+): ClubAnalysis | null {
+  const shaftLean =
+    payload?.clubMetrics?.shaftLean;
+
+  const swingPlane =
+    payload?.clubMetrics?.swingPlane;
+
+  const quality =
+    payload?.clubAnalysisQuality;
+
+  if (!shaftLean && !swingPlane && !quality) {
+    return null;
+  }
+
+  const limitations =
+    payload?.limitations?.filter(
+      (limitation) =>
+        limitation.trim().length > 0 &&
+        (
+          limitation
+            .toLowerCase()
+            .includes("shaft") ||
+          limitation
+            .toLowerCase()
+            .includes("plane") ||
+          limitation
+            .toLowerCase()
+            .includes("camera") ||
+          limitation
+            .toLowerCase()
+            .includes("three-dimensional")
+        ),
+    ) ?? [];
+
+  return {
+    shaftLean: {
+      available: Boolean(shaftLean),
+      angleDegrees: normalizeOptionalNumber(
+        shaftLean
+          ?.signedLeanFromVerticalDegrees,
+      ),
+      direction:
+        shaftLean?.cameraRelativeDirection ??
+        null,
+      geometrySource:
+        shaftLean?.geometrySource ?? null,
+      confidence: normalizeOptionalNumber(
+        shaftLean?.confidence,
+      ),
+      classification:
+        shaftLean?.classification ?? null,
+    },
+
+    swingPlane: {
+      available: Boolean(swingPlane),
+      confidence: normalizeOptionalNumber(
+        swingPlane?.confidence,
+      ),
+      classification:
+        swingPlane?.classification ?? null,
+      measurementCompleteness:
+        normalizeOptionalNumber(
+          swingPlane
+            ?.measurementCompleteness,
+        ),
+      smoothedReferenceCount:
+        normalizeOptionalNumber(
+          swingPlane
+            ?.smoothedReferenceCount,
+        ),
+      trackedReferenceCount:
+        normalizeOptionalNumber(
+          swingPlane
+            ?.trackedReferenceCount,
+        ),
+      topToImpactDegrees:
+        normalizeOptionalNumber(
+          swingPlane
+            ?.phaseChangesDegrees
+            ?.topToImpactDegrees,
+        ),
+    },
+
+    quality: {
+      status: quality?.status ?? null,
+      detectionRate: normalizeOptionalNumber(
+        quality?.detectionRate,
+      ),
+      detectedFrames: normalizeOptionalNumber(
+        quality?.detectedFrames,
+      ),
+      requestedFrames: normalizeOptionalNumber(
+        quality?.requestedFrames,
+      ),
+      referencePhasesAvailable:
+        normalizeOptionalNumber(
+          quality?.referencePhasesAvailable,
+        ),
+      referencePhasesTotal:
+        normalizeOptionalNumber(
+          quality?.referencePhasesTotal,
+        ),
+      minimumReferenceConfidence:
+        normalizeOptionalNumber(
+          quality?.minimumReferenceConfidence,
+        ),
+      usesTrackedGeometry:
+        quality?.usesTrackedGeometry === true,
+      usesSmoothedGeometry:
+        quality?.usesSmoothedGeometry === true,
+      warnings:
+        quality?.warnings?.filter(
+          (warning) =>
+            warning.trim().length > 0,
+        ) ?? [],
+    },
+
+    limitations,
+  };
+}
+
 export function mapBackendAnalysis(
   record: AnalysisRecord,
   apiOrigin: string,
@@ -907,6 +1044,9 @@ export function mapBackendAnalysis(
       coachingSummary,
     ),
     metrics: mapMetrics(record),
+    clubAnalysis: mapClubAnalysis(
+      record.analysisPayload,
+    ),
     findings,
     practicePlan: mapPracticePlan(
       record.analysisPayload,

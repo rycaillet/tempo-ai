@@ -52,12 +52,52 @@ export type AnalysisSummary = {
   strength: string;
 };
 
+export type ShaftLeanObservation = {
+  available: boolean;
+  angleDegrees: number | null;
+  direction: string | null;
+  geometrySource: string | null;
+  confidence: number | null;
+  classification: string | null;
+};
+
+export type SwingPlaneObservation = {
+  available: boolean;
+  confidence: number | null;
+  classification: string | null;
+  measurementCompleteness: number | null;
+  smoothedReferenceCount: number | null;
+  trackedReferenceCount: number | null;
+  topToImpactDegrees: number | null;
+};
+
+export type ClubAnalysisQuality = {
+  status: string | null;
+  detectionRate: number | null;
+  detectedFrames: number | null;
+  requestedFrames: number | null;
+  referencePhasesAvailable: number | null;
+  referencePhasesTotal: number | null;
+  minimumReferenceConfidence: number | null;
+  usesTrackedGeometry: boolean;
+  usesSmoothedGeometry: boolean;
+  warnings: string[];
+};
+
+export type ClubAnalysis = {
+  shaftLean: ShaftLeanObservation;
+  swingPlane: SwingPlaneObservation;
+  quality: ClubAnalysisQuality;
+  limitations: string[];
+};
+
 export type SwingAnalysis = {
   summary: AnalysisSummary;
   videoUrl: string | null;
   videoMimeType: string | null;
   phases: SwingPhase[];
   metrics: SwingMetric[];
+  clubAnalysis: ClubAnalysis | null;
   findings: SwingFinding[];
   practicePlan: PracticePlanItem[];
 };
