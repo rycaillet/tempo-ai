@@ -168,6 +168,71 @@ export type BackendAnalysisMetricCard = {
   measurementCompleteness?: number | null;
 };
 
+export type BackendShaftLeanMetric = {
+  confidence?: number | null;
+  classification?: string | null;
+  geometrySource?: string | null;
+  cameraRelativeDirection?: string | null;
+  signedLeanFromVerticalDegrees?: number | null;
+};
+
+export type BackendSwingPlaneMetric = {
+  confidence?: number | null;
+  classification?: string | null;
+  phaseChangesDegrees?: {
+    topToImpactDegrees?: number | null;
+    takeawayToTopDegrees?: number | null;
+    impactToFinishDegrees?: number | null;
+    addressToTakeawayDegrees?: number | null;
+    topToDownswingStartDegrees?: number | null;
+    downswingStartToImpactDegrees?: number | null;
+  };
+  trackedReferenceCount?: number | null;
+  smoothedReferenceCount?: number | null;
+  measurementCompleteness?: number | null;
+};
+
+export type BackendClubMetrics = {
+  shaftLean?: BackendShaftLeanMetric;
+  swingPlane?: BackendSwingPlaneMetric;
+};
+
+export type BackendClubAnalysisQuality = {
+  status?: string | null;
+  warnings?: string[];
+  detectionRate?: number | null;
+  trackedFrames?: number | null;
+  detectedFrames?: number | null;
+  smoothedFrames?: number | null;
+  processedFrames?: number | null;
+  requestedFrames?: number | null;
+  averageConfidence?: number | null;
+  imageDetectedFrames?: number | null;
+  usesTrackedGeometry?: boolean;
+  referencePhasesTotal?: number | null;
+  usesSmoothedGeometry?: boolean;
+  trackedReferenceCount?: number | null;
+  smoothedReferenceCount?: number | null;
+  referencePhasesAvailable?: number | null;
+  minimumReferenceConfidence?: number | null;
+  referencePhaseCompleteness?: number | null;
+  unavailableReferencePhases?: string[];
+};
+
+export type BackendAnalysisObservation = {
+  metricKey?: BackendMetricKey;
+  displayName?: string;
+  status?: string;
+  summary?: string;
+  confidence?: number | null;
+  limitations?: string[];
+  facts?: {
+    key?: string;
+    label?: string;
+    value?: string;
+  }[];
+};
+
 export type BackendAnalysisPayload = {
   contractVersion?: string;
   status?: "ready" | "partial";
@@ -184,6 +249,9 @@ export type BackendAnalysisPayload = {
   coaching?: BackendCoaching | null;
   findings?: BackendFindings;
   recommendations?: BackendPublicRecommendations;
+  clubMetrics?: BackendClubMetrics;
+  clubAnalysisQuality?: BackendClubAnalysisQuality;
+  observations?: BackendAnalysisObservation[];
   limitations?: string[];
 };
 

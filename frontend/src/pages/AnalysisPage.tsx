@@ -68,6 +68,59 @@ function formatPlaybackTime(seconds: number) {
   return `${seconds.toFixed(1)}s`;
 }
 
+function formatPercentage(
+  value: number | null,
+) {
+  if (value === null) {
+    return "Unavailable";
+  }
+
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatDegrees(
+  value: number | null,
+) {
+  if (value === null) {
+    return "Unavailable";
+  }
+
+  return `${value.toFixed(1)}°`;
+}
+
+function formatObservationLabel(
+  value: string | null,
+) {
+  if (!value) {
+    return "Unavailable";
+  }
+
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) =>
+      character.toUpperCase(),
+    );
+}
+
+function formatClubWarning(
+  warning: string,
+) {
+  const warningLabels: Record<
+    string,
+    string
+  > = {
+    tracked_reference_geometry_used:
+      "Tracked reference geometry was used.",
+    low_reference_confidence:
+      "At least one reference phase had limited confidence.",
+  };
+
+  return (
+    warningLabels[warning] ??
+    formatObservationLabel(warning)
+  );
+}
+
 function findCurrentPhase(
   phases: SwingPhase[],
   currentTime: number,
@@ -139,6 +192,7 @@ function AnalysisPage() {
     videoUrl,
     phases: swingPhases,
     metrics: swingMetrics,
+    clubAnalysis,
     findings: swingFindings,
     practicePlan,
   } = analysis;
@@ -526,6 +580,312 @@ function AnalysisPage() {
               </Panel>
             ))}
           </div>
+
+          {clubAnalysis && (
+            <section className="mt-16">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-ice">
+                    Club analysis
+                  </p>
+
+                  <h2 className="mt-3 font-display text-3xl font-semibold tracking-[-0.04em] text-white">
+                    Camera-relative club observations
+                  </h2>
+
+                  <p className="mt-3 max-w-3xl leading-7 text-copy-muted">
+                    These measurements describe the detected
+                    shaft in the two-dimensional video frame.
+                    They are shown separately from scored body
+                    metrics and should not be interpreted as a
+                    reconstructed three-dimensional club path.
+                  </p>
+                </div>
+
+                <Badge variant="info">
+                  Measurement only
+                </Badge>
+              </div>
+
+              <div className="mt-8 grid gap-6 xl:grid-cols-3">
+                <Panel
+                  padding="lg"
+                  variant="raised"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
+                        Shaft lean
+                      </p>
+
+                      <p className="mt-4 font-display text-4xl font-semibold tracking-[-0.05em] text-white">
+                        {formatDegrees(
+                          clubAnalysis.shaftLean
+                            .angleDegrees,
+                        )}
+                      </p>
+
+                      <p className="mt-2 text-sm text-ice">
+                        From image vertical
+                      </p>
+                    </div>
+
+                    <div className="flex size-11 items-center justify-center rounded-2xl bg-ice/10 text-ice">
+                      <Gauge size={21} />
+                    </div>
+                  </div>
+
+                  <dl className="mt-7 space-y-4 border-t border-white/10 pt-6">
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Direction
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {formatObservationLabel(
+                          clubAnalysis.shaftLean
+                            .direction,
+                        )}
+                      </dd>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Geometry
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {formatObservationLabel(
+                          clubAnalysis.shaftLean
+                            .geometrySource,
+                        )}
+                      </dd>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Confidence
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {formatPercentage(
+                          clubAnalysis.shaftLean
+                            .confidence,
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                </Panel>
+
+                <Panel
+                  padding="lg"
+                  variant="raised"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
+                        Swing plane
+                      </p>
+
+                      <p className="mt-4 font-display text-4xl font-semibold tracking-[-0.05em] text-white">
+                        {formatDegrees(
+                          clubAnalysis.swingPlane
+                            .topToImpactDegrees,
+                        )}
+                      </p>
+
+                      <p className="mt-2 text-sm text-ice">
+                        Top-to-impact angle change
+                      </p>
+                    </div>
+
+                    <div className="flex size-11 items-center justify-center rounded-2xl bg-ice/10 text-ice">
+                      <Gauge size={21} />
+                    </div>
+                  </div>
+
+                  <dl className="mt-7 space-y-4 border-t border-white/10 pt-6">
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Confidence
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {formatPercentage(
+                          clubAnalysis.swingPlane
+                            .confidence,
+                        )}
+                      </dd>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Smoothed phases
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {clubAnalysis.swingPlane
+                          .smoothedReferenceCount ??
+                          "Unavailable"}
+                      </dd>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Tracked phases
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {clubAnalysis.swingPlane
+                          .trackedReferenceCount ??
+                          "Unavailable"}
+                      </dd>
+                    </div>
+                  </dl>
+                </Panel>
+
+                <Panel
+                  padding="lg"
+                  variant="raised"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
+                        Detection quality
+                      </p>
+
+                      <p className="mt-4 font-display text-4xl font-semibold tracking-[-0.05em] text-white">
+                        {formatPercentage(
+                          clubAnalysis.quality
+                            .detectionRate,
+                        )}
+                      </p>
+
+                      <p className="mt-2 text-sm text-ice">
+                        Frames with club detection
+                      </p>
+                    </div>
+
+                    <div className="flex size-11 items-center justify-center rounded-2xl bg-lime-soft/10 text-lime-soft">
+                      <CheckCircle2 size={21} />
+                    </div>
+                  </div>
+
+                  <dl className="mt-7 space-y-4 border-t border-white/10 pt-6">
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Detected frames
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {clubAnalysis.quality
+                          .detectedFrames ??
+                          "Unavailable"}
+                        {clubAnalysis.quality
+                          .requestedFrames !== null &&
+                          ` of ${clubAnalysis.quality.requestedFrames}`}
+                      </dd>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Reference phases
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {clubAnalysis.quality
+                          .referencePhasesAvailable ??
+                          "Unavailable"}
+                        {clubAnalysis.quality
+                          .referencePhasesTotal !== null &&
+                          ` of ${clubAnalysis.quality.referencePhasesTotal}`}
+                      </dd>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Geometry processing
+                      </dt>
+
+                      <dd className="text-right text-sm font-semibold text-white">
+                        {[
+                          clubAnalysis.quality
+                            .usesSmoothedGeometry
+                            ? "Smoothed"
+                            : null,
+                          clubAnalysis.quality
+                            .usesTrackedGeometry
+                            ? "Tracked"
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" + ") ||
+                          "Image detections"}
+                      </dd>
+                    </div>
+                  </dl>
+                </Panel>
+              </div>
+
+              {(clubAnalysis.quality.warnings.length >
+                0 ||
+                clubAnalysis.limitations.length >
+                  0) && (
+                <Panel
+                  className="mt-6"
+                  padding="lg"
+                  variant="muted"
+                >
+                  <div className="grid gap-8 lg:grid-cols-2">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
+                        Quality notes
+                      </p>
+
+                      <div className="mt-4 space-y-3">
+                        {clubAnalysis.quality.warnings
+                          .map(formatClubWarning)
+                          .map((warning) => (
+                            <div
+                              key={warning}
+                              className="flex items-start gap-3"
+                            >
+                              <CheckCircle2
+                                className="mt-0.5 shrink-0 text-ice"
+                                size={17}
+                              />
+
+                              <p className="text-sm leading-6 text-copy-muted">
+                                {warning}
+                              </p>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
+                        Measurement limitations
+                      </p>
+
+                      <div className="mt-4 space-y-3">
+                        {clubAnalysis.limitations.map(
+                          (limitation) => (
+                            <p
+                              key={limitation}
+                              className="text-sm leading-6 text-copy-muted"
+                            >
+                              {limitation}
+                            </p>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
+              )}
+            </section>
+          )}
 
           <div className="mt-16 grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
             <div className="space-y-6">
