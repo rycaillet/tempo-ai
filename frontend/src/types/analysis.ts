@@ -2,12 +2,22 @@ export type SwingPhaseStatus = "complete" | "active";
 
 export type FindingSeverity = "High" | "Medium" | "Low";
 
+export type ClubVisualization = {
+  imageUrl: string;
+  frameIndex: number | null;
+  timestampSeconds: number | null;
+  confidence: number | null;
+  geometrySource: string | null;
+  detectionSource: string | null;
+};
+
 export type SwingPhase = {
   id: string;
   label: string;
   timestamp: string;
   status: SwingPhaseStatus;
   coaching: PhaseCoaching;
+  clubVisualization: ClubVisualization | null;
 };
 
 export type SwingMetric = {

@@ -233,6 +233,29 @@ export type BackendAnalysisObservation = {
   }[];
 };
 
+export type BackendClubVisualization = {
+  phaseKey?: string;
+  sourcePhase?: string;
+  imageUrl?: string;
+  frameIndex?: number;
+  timestampSeconds?: number;
+  confidence?: number;
+  geometrySource?: string;
+  detectionSource?: string;
+};
+
+export type BackendClubVisualizations = Partial<
+  Record<
+    | "address"
+    | "takeaway"
+    | "top"
+    | "downswing"
+    | "impact"
+    | "finish",
+    BackendClubVisualization
+  >
+>;
+
 export type BackendAnalysisPayload = {
   contractVersion?: string;
   status?: "ready" | "partial";
@@ -251,6 +274,7 @@ export type BackendAnalysisPayload = {
   recommendations?: BackendPublicRecommendations;
   clubMetrics?: BackendClubMetrics;
   clubAnalysisQuality?: BackendClubAnalysisQuality;
+  clubVisualizations?: BackendClubVisualizations;
   observations?: BackendAnalysisObservation[];
   limitations?: string[];
 };

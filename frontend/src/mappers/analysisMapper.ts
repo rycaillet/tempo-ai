@@ -1,6 +1,7 @@
 import type { AnalysisRecord } from "../services/analysisService";
 import type {
   ClubAnalysis,
+  ClubVisualization,
   FindingSeverity,
   PhaseCoaching,
   PoseVariant,
@@ -13,6 +14,7 @@ import type {
 import type {
   BackendAnalysisPayload,
   BackendAnalysisReport,
+  BackendClubVisualization,
   BackendImprovementPriority,
   BackendMetricKey,
   BackendPhaseFrame,
@@ -87,7 +89,7 @@ const metricOrder: BackendMetricKey[] = [
 ];
 
 type PhaseDefinition = {
-  id: SwingPhase["id"];
+  id: PoseVariant;
   label: string;
   poseVariant: PoseVariant;
   frameKey: keyof BackendPhaseFrames;
@@ -202,6 +204,56 @@ function createVideoUrl(
   return `${apiOrigin}/uploads/analyses/${encodeURIComponent(
     storedFilename,
   )}`;
+}
+
+function createPublicAssetUrl(
+  assetPath: string | undefined,
+  apiOrigin: string,
+): string | null {
+  if (!assetPath?.trim()) {
+    return null;
+  }
+
+  const normalizedPath = assetPath.trim();
+
+  if (/^https?:\/\//i.test(normalizedPath)) {
+    return normalizedPath;
+  }
+
+  return `${apiOrigin}${
+    normalizedPath.startsWith("/") ? "" : "/"
+  }${normalizedPath}`;
+}
+
+function mapClubVisualization(
+  visualization: BackendClubVisualization | undefined,
+  apiOrigin: string,
+): ClubVisualization | null {
+  const imageUrl = createPublicAssetUrl(
+    visualization?.imageUrl,
+    apiOrigin,
+  );
+
+  if (!imageUrl) {
+    return null;
+  }
+
+  return {
+    imageUrl,
+    frameIndex: normalizeOptionalNumber(
+      visualization?.frameIndex,
+    ),
+    timestampSeconds: normalizeOptionalNumber(
+      visualization?.timestampSeconds,
+    ),
+    confidence: normalizeOptionalNumber(
+      visualization?.confidence,
+    ),
+    geometrySource:
+      visualization?.geometrySource ?? null,
+    detectionSource:
+      visualization?.detectionSource ?? null,
+  };
 }
 
 function formatClassification(
@@ -740,6 +792,7 @@ function mapPhases(
   record: AnalysisRecord,
   findings: SwingFinding[],
   coachingSummary: string,
+  apiOrigin: string,
 ): SwingPhase[] {
   const phaseFrames =
     getReportPhaseFrames(record);
@@ -764,6 +817,12 @@ function mapPhases(
         phaseDefinition,
         findings,
         coachingSummary,
+      ),
+      clubVisualization: mapClubVisualization(
+        record.analysisPayload?.clubVisualizations?.[
+          phaseDefinition.id
+        ],
+        apiOrigin,
       ),
     }),
   );
@@ -1121,6 +1180,7 @@ export function mapBackendAnalysis(
       record,
       findings,
       coachingSummary,
+      apiOrigin,
     ),
     metrics: mapMetrics(record),
     clubAnalysis: mapClubAnalysis(

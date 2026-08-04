@@ -8,6 +8,7 @@ import {
   Gauge,
   Play,
   RotateCcw,
+  ScanLine,
   Sparkles,
   Target,
 } from "lucide-react";
@@ -40,6 +41,8 @@ const severityVariant = {
   Medium: "info",
   Low: "neutral",
 } as const;
+
+type AnalysisMediaMode = "video" | "club";
 
 const metricPhaseIds: Record<string, string> = {
   tempo: "top",
@@ -185,6 +188,9 @@ function AnalysisPage() {
   const [videoError, setVideoError] =
     useState<string | null>(null);
 
+  const [mediaMode, setMediaMode] =
+    useState<AnalysisMediaMode>("video");
+
   const [
     selectedMetricId,
     setSelectedMetricId,
@@ -225,6 +231,15 @@ function AnalysisPage() {
     swingPhases.find(
       (phase) => phase.id === selectedPhaseId,
     ) ?? swingPhases[0];
+
+  const selectedClubVisualization =
+    selectedPhase?.clubVisualization ?? null;
+
+  const hasClubVisualizations =
+    swingPhases.some(
+      (phase) =>
+        phase.clubVisualization !== null,
+    );
 
   const selectedFinding =
     selectedPhase?.coaching.findingId
@@ -357,6 +372,16 @@ function AnalysisPage() {
     }
   }
 
+  function handleMediaModeChange(
+    nextMode: AnalysisMediaMode,
+  ) {
+    setMediaMode(nextMode);
+
+    if (nextMode === "club") {
+      videoRef.current?.pause();
+    }
+  }
+
   async function handlePlay() {
     const video = videoRef.current;
 
@@ -365,6 +390,7 @@ function AnalysisPage() {
     }
 
     try {
+      setMediaMode("video");
       await video.play();
       setVideoError(null);
     } catch {
@@ -471,29 +497,136 @@ function AnalysisPage() {
 
           <div className="mt-14 grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.65fr)]">
             <Panel
+              className="self-start"
               padding="none"
               variant="raised"
             >
-              <div className="flex flex-col gap-4 border-b border-white/10 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-4 border-b border-white/10 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="font-display text-xl font-semibold text-white">
-                    Analyzed swing video
+                    {mediaMode === "club"
+                      ? "Club detection evidence"
+                      : "Analyzed swing video"}
                   </p>
 
                   <p className="mt-1 text-sm text-copy-subtle">
                     {selectedPhase.label} selected
                     {" · "}
-                    {formatPlaybackTime(currentTime)}
+                    {mediaMode === "club"
+                      ? selectedClubVisualization
+                        ? `${formatPercentage(
+                            selectedClubVisualization.confidence,
+                          )} confidence`
+                        : "Visualization unavailable"
+                      : formatPlaybackTime(currentTime)}
                   </p>
                 </div>
 
-                <Badge variant="success">
-                  Analysis complete
-                </Badge>
+                <div className="flex flex-wrap items-center gap-3">
+                  {hasClubVisualizations && (
+                    <div
+                      aria-label="Analysis media mode"
+                      className="inline-flex rounded-xl border border-white/10 bg-black/20 p-1"
+                      role="group"
+                    >
+                      <button
+                        className={[
+                          "rounded-lg px-3 py-2 text-xs font-semibold transition",
+                          mediaMode === "video"
+                            ? "bg-white/10 text-white"
+                            : "text-copy-subtle hover:text-white",
+                        ].join(" ")}
+                        type="button"
+                        onClick={() =>
+                          handleMediaModeChange("video")
+                        }
+                      >
+                        Video
+                      </button>
+
+                      <button
+                        className={[
+                          "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition",
+                          mediaMode === "club"
+                            ? "bg-lime-soft/15 text-lime-soft"
+                            : "text-copy-subtle hover:text-white",
+                        ].join(" ")}
+                        type="button"
+                        onClick={() =>
+                          handleMediaModeChange("club")
+                        }
+                      >
+                        <ScanLine size={14} />
+                        Club detection
+                      </button>
+                    </div>
+                  )}
+
+                  <Badge variant="success">
+                    Analysis complete
+                  </Badge>
+                </div>
               </div>
 
               <div className="relative aspect-video overflow-hidden bg-black">
-                {videoUrl ? (
+                {mediaMode === "club" ? (
+                  selectedClubVisualization ? (
+                    <>
+                      <div className="flex h-full w-full items-center justify-center overflow-hidden bg-black">
+                        <img
+                            alt={`${selectedPhase.label} club detection visualization`}
+                            className="max-h-full max-w-full -rotate-90 object-contain"
+                            src={selectedClubVisualization.imageUrl}
+                        />
+                      </div>
+
+                      <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-center gap-2">
+                        <Badge variant="info">
+                          {formatObservationLabel(
+                            selectedClubVisualization.geometrySource,
+                          )}{" "}
+                          geometry
+                        </Badge>
+
+                        <Badge variant="neutral">
+                          {formatObservationLabel(
+                            selectedClubVisualization.detectionSource,
+                          )}{" "}
+                          detection
+                        </Badge>
+
+                        {selectedClubVisualization.frameIndex !==
+                          null && (
+                          <Badge variant="neutral">
+                            Frame{" "}
+                            {
+                              selectedClubVisualization.frameIndex
+                            }
+                          </Badge>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-6 text-center">
+                      <div>
+                        <ScanLine
+                          className="mx-auto text-copy-subtle"
+                          size={36}
+                        />
+
+                        <p className="mt-5 font-display text-2xl font-semibold text-white">
+                          Club visualization unavailable
+                        </p>
+
+                        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-copy-muted">
+                          TempoAI did not produce a reliable
+                          presentation frame for this phase. Select
+                          another phase or return to the video.
+                        </p>
+                      </div>
+                    </div>
+                  )
+                ) : videoUrl ? (
                   <>
                     <video
                       ref={videoRef}
@@ -562,7 +695,7 @@ function AnalysisPage() {
                 )}
               </div>
 
-              {videoError && (
+              {mediaMode === "video" && videoError && (
                 <div className="border-t border-red-400/20 bg-red-400/5 px-6 py-4">
                   <p className="text-sm text-red-200">
                     {videoError}

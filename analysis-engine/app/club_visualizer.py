@@ -885,25 +885,6 @@ def draw_club_presentation_visualization(
         lineType=cv2.LINE_AA,
     )
 
-    draw_presentation_label(
-        annotated_frame,
-        (
-            f"{phase_name} | "
-            f"frame {frame_index}"
-        ),
-        origin=(20, 34),
-    )
-
-    draw_presentation_label(
-        annotated_frame,
-        (
-            f"{geometry_source} geometry | "
-            f"{detection_source} detection | "
-            f"{confidence:.0%} confidence"
-        ),
-        origin=(20, 68),
-    )
-
     return annotated_frame
 
 
