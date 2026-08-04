@@ -8,9 +8,12 @@ import cv2
 import numpy as np
 
 from app.club_visualizer import (
+    create_club_presentation_directory,
+    create_club_presentation_path,
     create_club_visualization_directory,
     create_club_visualization_path,
     draw_club_detection_visualization,
+    draw_club_presentation_visualization,
     sanitize_phase_name,
     save_club_detection_visualization,
 )
@@ -55,6 +58,25 @@ class ClubVisualizerTests(unittest.TestCase):
             ),
         )
 
+    def test_create_presentation_directory_from_refined_phases(
+        self,
+    ) -> None:
+        refined_phases_path = Path(
+            "/tmp/golf-swing-refined-phases.json"
+        )
+
+        result = create_club_presentation_directory(
+            refined_phases_path
+        )
+
+        self.assertEqual(
+            result,
+            Path(
+                "/tmp/"
+                "golf-swing-club-presentation-frames"
+            ),
+        )
+
     def test_sanitize_phase_name(
         self,
     ) -> None:
@@ -91,6 +113,27 @@ class ClubVisualizerTests(unittest.TestCase):
             Path(
                 "/tmp/club-frames/"
                 "topofbackswing-frame-000093.jpg"
+            ),
+        )
+
+    def test_create_presentation_path(
+        self,
+    ) -> None:
+        presentation_directory = Path(
+            "/tmp/club-presentation"
+        )
+
+        result = create_club_presentation_path(
+            presentation_directory,
+            phase_name="impactReference",
+            frame_index=107,
+        )
+
+        self.assertEqual(
+            result,
+            Path(
+                "/tmp/club-presentation/"
+                "impactreference-frame-000107.jpg"
             ),
         )
 
@@ -158,6 +201,79 @@ class ClubVisualizerTests(unittest.TestCase):
                 original_frame,
             )
         )
+
+    def test_draw_presentation_visualization_returns_clean_copy(
+        self,
+    ) -> None:
+        frame = np.zeros(
+            (300, 400, 3),
+            dtype=np.uint8,
+        )
+        original_frame = frame.copy()
+
+        visualization = (
+            draw_club_presentation_visualization(
+                frame,
+                phase_name="impactReference",
+                frame_index=107,
+                hand_anchor={
+                    "x": 180.0,
+                    "y": 150.0,
+                },
+                shaft_line={
+                    "start": {
+                        "x": 300.0,
+                        "y": 220.0,
+                    },
+                    "end": {
+                        "x": 180.0,
+                        "y": 150.0,
+                    },
+                    "lengthPixels": 138.924,
+                    "angleDegrees": 30.256,
+                },
+                confidence=0.82,
+                geometry_source="smoothed",
+                detection_source="image",
+            )
+        )
+
+        self.assertEqual(
+            visualization.shape,
+            frame.shape,
+        )
+        self.assertFalse(
+            np.array_equal(
+                visualization,
+                original_frame,
+            )
+        )
+        self.assertTrue(
+            np.array_equal(
+                frame,
+                original_frame,
+            )
+        )
+
+    def test_draw_presentation_visualization_rejects_invalid_line(
+        self,
+    ) -> None:
+        frame = np.zeros(
+            (300, 400, 3),
+            dtype=np.uint8,
+        )
+
+        with self.assertRaises(ValueError):
+            draw_club_presentation_visualization(
+                frame,
+                phase_name="impactReference",
+                frame_index=107,
+                hand_anchor=None,
+                shaft_line={},
+                confidence=0.0,
+                geometry_source="raw",
+                detection_source="image",
+            )
 
     def test_draw_visualization_includes_search_region(
         self,
@@ -264,6 +380,29 @@ class ClubVisualizerTests(unittest.TestCase):
                 candidate_count=0,
                 detected=False,
                 failure_reason="Frame unavailable.",
+            )
+
+    def test_draw_presentation_rejects_empty_frame(
+        self,
+    ) -> None:
+        empty_frame = np.empty(
+            (0, 0, 3),
+            dtype=np.uint8,
+        )
+
+        with self.assertRaises(ValueError):
+            draw_club_presentation_visualization(
+                empty_frame,
+                phase_name="address",
+                frame_index=1,
+                hand_anchor=None,
+                shaft_line={
+                    "start": {"x": 10.0, "y": 10.0},
+                    "end": {"x": 20.0, "y": 20.0},
+                },
+                confidence=0.5,
+                geometry_source="raw",
+                detection_source="image",
             )
 
     def test_save_visualization_writes_image(

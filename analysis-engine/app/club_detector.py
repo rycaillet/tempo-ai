@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, Mapping, Sequence, TypedDict
+from typing import Any, Mapping, NotRequired, Sequence, TypedDict
 
 import cv2
 import numpy as np
@@ -16,9 +16,12 @@ from app.pose_detector import (
     rotate_frame,
 )
 from app.club_visualizer import (
+    create_club_presentation_directory,
+    create_club_presentation_path,
     create_club_visualization_directory,
     create_club_visualization_path,
     draw_club_detection_visualization,
+    draw_club_presentation_visualization,
     save_club_detection_visualization,
 )
 from app.club_short_gap_tracking import (
@@ -255,6 +258,8 @@ class ClubFrameDetection(TypedDict):
     candidateDiagnostics: CandidateDiagnostics | None
     failureReason: str | None
     debugImagePath: str | None
+    presentationImagePath: NotRequired[str | None]
+    presentationGeometrySource: NotRequired[str | None]
     temporalStatus: str
     temporalComparison: TemporalComparison | None
     trackingDetails: dict[str, Any] | None
@@ -273,6 +278,7 @@ class ClubDetectionSummary(TypedDict):
     averageConfidence: float
     selectedRotation: str
     visualizationCount: int
+    presentationVisualizationCount: NotRequired[int]
     temporalComparisonCount: int
     temporallyConsistentFrames: int
     temporalReviewFrames: int
@@ -283,6 +289,7 @@ class ClubDetectionResult(TypedDict):
     sourceVideo: str
     assumptions: dict[str, Any]
     visualizationDirectory: str
+    presentationVisualizationDirectory: NotRequired[str]
     summary: ClubDetectionSummary
     frames: list[ClubFrameDetection]
 
@@ -2670,6 +2677,142 @@ def apply_temporal_consistency_validation(
         previous_detection = frame_result
 
 
+
+def create_reference_presentation_visualizations(
+    *,
+    video_path: Path,
+    selected_rotation: str,
+    frame_results: list[ClubFrameDetection],
+    output_directory: Path,
+) -> int:
+    """
+    Create one clean visualization for each detected reference frame.
+
+    Presentation images are generated after tracking and smoothing so
+    they can prefer stabilized geometry while preserving provenance.
+    """
+
+    output_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    video = cv2.VideoCapture(
+        str(video_path)
+    )
+
+    if not video.isOpened():
+        raise ValueError(
+            f"Unable to reopen video for club "
+            f"presentation frames: {video_path}"
+        )
+
+    visualization_count = 0
+
+    try:
+        for frame_result in frame_results:
+            frame_result[
+                "presentationImagePath"
+            ] = None
+            frame_result[
+                "presentationGeometrySource"
+            ] = None
+
+            if not frame_result["isReferenceFrame"]:
+                continue
+
+            if not frame_result["detected"]:
+                continue
+
+            shaft_line = frame_result.get(
+                "smoothedShaftLine"
+            )
+
+            if shaft_line is not None:
+                geometry_source = "smoothed"
+            else:
+                shaft_line = frame_result.get(
+                    "shaftLine"
+                )
+
+                geometry_source = (
+                    "tracked"
+                    if frame_result.get(
+                        "detectionSource"
+                    ) == "tracked"
+                    else "raw"
+                )
+
+            if shaft_line is None:
+                continue
+
+            raw_frame = read_frame_at_index(
+                video,
+                frame_result["frameIndex"],
+            )
+
+            if raw_frame is None:
+                continue
+
+            rotated_frame = rotate_frame(
+                raw_frame,
+                selected_rotation,
+            )
+
+            presentation = (
+                draw_club_presentation_visualization(
+                    rotated_frame,
+                    phase_name=frame_result["phase"],
+                    frame_index=frame_result[
+                        "frameIndex"
+                    ],
+                    hand_anchor=frame_result.get(
+                        "handAnchor"
+                    ),
+                    shaft_line=shaft_line,
+                    confidence=frame_result[
+                        "confidence"
+                    ],
+                    geometry_source=geometry_source,
+                    detection_source=(
+                        frame_result.get(
+                            "detectionSource"
+                        )
+                        or "unavailable"
+                    ),
+                )
+            )
+
+            presentation_path = (
+                create_club_presentation_path(
+                    output_directory,
+                    phase_name=frame_result["phase"],
+                    frame_index=frame_result[
+                        "frameIndex"
+                    ],
+                )
+            )
+
+            save_club_detection_visualization(
+                presentation_path,
+                presentation,
+            )
+
+            frame_result[
+                "presentationImagePath"
+            ] = str(presentation_path)
+            frame_result[
+                "presentationGeometrySource"
+            ] = geometry_source
+
+            visualization_count += 1
+    finally:
+        video.release()
+
+    return visualization_count
+
+
+
 def analyze_club_detection(
     *,
     video_path: Path,
@@ -2795,6 +2938,14 @@ def analyze_club_detection(
     resolved_visualization_directory.mkdir(
         parents=True,
         exist_ok=True,
+    )
+
+    resolved_presentation_directory = (
+        create_club_presentation_directory(
+            refined_phases_path
+        )
+        .expanduser()
+        .resolve()
     )
 
     video = cv2.VideoCapture(
@@ -3300,6 +3451,17 @@ def analyze_club_detection(
         frame_results
     )
 
+    presentation_visualization_count = (
+        create_reference_presentation_visualizations(
+            video_path=resolved_video_path,
+            selected_rotation=selected_rotation,
+            frame_results=frame_results,
+            output_directory=(
+                resolved_presentation_directory
+            ),
+        )
+    )
+
     detected_results = [
         frame
         for frame in frame_results
@@ -3380,6 +3542,9 @@ def analyze_club_detection(
         "visualizationDirectory": str(
             resolved_visualization_directory
         ),
+        "presentationVisualizationDirectory": str(
+            resolved_presentation_directory
+        ),
         "assumptions": {
             "detectedObject": (
                 "probable-golf-shaft-line"
@@ -3451,6 +3616,12 @@ def analyze_club_detection(
                 "anchor for inspection. They are "
                 "diagnostic artifacts and are not "
                 "part of the final coaching report."
+            ),
+            "presentationVisualizations": (
+                "Detected reference frames receive a separate "
+                "customer-facing image containing only the "
+                "selected shaft line, grip and clubhead markers, "
+                "phase label, confidence, and geometry provenance."
             ),
             "limitations": [
                 (
@@ -3544,6 +3715,9 @@ def analyze_club_detection(
             "visualizationCount": len(
                 visualized_results
             ),
+            "presentationVisualizationCount": (
+                presentation_visualization_count
+            ),
             "temporalComparisonCount": len(
                 temporal_comparisons
             ),
@@ -3590,6 +3764,9 @@ def analyze_club_detection(
         ),
         "clubVisualizationDirectory": str(
             resolved_visualization_directory
+        ),
+        "clubPresentationDirectory": str(
+            resolved_presentation_directory
         ),
         "clubDetection": result,
     }
