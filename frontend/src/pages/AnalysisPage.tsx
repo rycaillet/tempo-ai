@@ -19,6 +19,7 @@ import {
 import { Link, useParams } from "react-router-dom";
 
 import AnalysisSkeleton from "../components/analysis/AnalysisSkeleton";
+import MetricDetailDrawer from "../components/analysis/MetricDetailDrawer";
 import PhaseCoachPanel from "../components/analysis/PhaseCoachPanel";
 import SwingTimeline from "../components/analysis/SwingTimeline";
 import Badge from "../components/ui/Badge";
@@ -172,6 +173,11 @@ function AnalysisPage() {
   const [videoError, setVideoError] =
     useState<string | null>(null);
 
+  const [
+    selectedMetricId,
+    setSelectedMetricId,
+  ] = useState<string | null>(null);
+
   useEffect(() => {
     async function loadAnalysis() {
       const result = await getAnalysis(
@@ -211,6 +217,21 @@ function AnalysisPage() {
             selectedPhase.coaching.findingId,
         )
       : undefined;
+
+  const selectedMetric =
+    swingMetrics.find(
+      (metric) =>
+        metric.id === selectedMetricId,
+    ) ?? null;
+
+  const selectedMetricFinding =
+    selectedMetric
+      ? swingFindings.find(
+          (finding) =>
+            finding.metricKey ===
+            selectedMetric.id,
+        ) ?? null
+      : null;
 
   function handlePhaseSelect(
     phase: SwingPhase,
@@ -517,39 +538,53 @@ function AnalysisPage() {
 
           <div className="mt-6 grid gap-6 sm:grid-cols-2 xl:grid-cols-5">
             {swingMetrics.map((metric) => (
-              <Panel
+              <button
                 key={metric.id}
-                padding="md"
-                variant="raised"
+                aria-haspopup="dialog"
+                className="group h-full text-left focus:outline-none"
+                type="button"
+                onClick={() =>
+                  setSelectedMetricId(metric.id)
+                }
               >
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
-                    {metric.label}
+                <Panel
+                  className="h-full transition duration-200 group-hover:-translate-y-1 group-hover:border-lime-soft/25 group-hover:shadow-lime group-focus-visible:ring-2 group-focus-visible:ring-lime-soft/60"
+                  padding="md"
+                  variant="raised"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
+                      {metric.label}
+                    </p>
+
+                    <Gauge
+                      className="text-lime-soft transition group-hover:scale-110"
+                      size={18}
+                    />
+                  </div>
+
+                  <p className="mt-5 font-display text-4xl font-semibold tracking-[-0.05em] text-white">
+                    {metric.score}
                   </p>
 
-                  <Gauge
-                    className="text-lime-soft"
-                    size={18}
-                  />
-                </div>
+                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
+                    <div
+                      className="h-full rounded-full bg-lime-soft"
+                      style={{
+                        width: `${metric.score}%`,
+                      }}
+                    />
+                  </div>
 
-                <p className="mt-5 font-display text-4xl font-semibold tracking-[-0.05em] text-white">
-                  {metric.score}
-                </p>
+                  <p className="mt-4 text-sm leading-6 text-copy-muted">
+                    {metric.description}
+                  </p>
 
-                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
-                  <div
-                    className="h-full rounded-full bg-lime-soft"
-                    style={{
-                      width: `${metric.score}%`,
-                    }}
-                  />
-                </div>
-
-                <p className="mt-4 text-sm leading-6 text-copy-muted">
-                  {metric.description}
-                </p>
-              </Panel>
+                  <p className="mt-5 text-xs font-semibold uppercase tracking-[0.16em] text-ice opacity-70 transition group-hover:opacity-100">
+                    View details
+                  </p>
+                </Panel>
+              </button>
             ))}
           </div>
 
@@ -1109,6 +1144,14 @@ function AnalysisPage() {
           </div>
         </Container>
       </Section>
+
+      <MetricDetailDrawer
+        metric={selectedMetric}
+        finding={selectedMetricFinding}
+        onClose={() =>
+          setSelectedMetricId(null)
+        }
+      />
     </main>
   );
 }
