@@ -488,7 +488,11 @@ function AnalysisPage() {
                 Analyze another
               </Button>
 
-              <Button to="/compare">
+              <Button
+                to={`/compare?baselineId=${encodeURIComponent(
+                  swingId ?? analysisSummary.id,
+                )}`}
+              >
                 Compare swing
                 <ChevronRight size={17} />
               </Button>
