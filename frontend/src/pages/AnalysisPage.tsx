@@ -31,6 +31,7 @@ import Section from "../components/ui/Section";
 import { getAnalysis } from "../services/analysisService";
 import type {
   SwingAnalysis,
+  SwingMetric,
   SwingPhase,
 } from "../types/analysis";
 
@@ -39,6 +40,17 @@ const severityVariant = {
   Medium: "info",
   Low: "neutral",
 } as const;
+
+const metricPhaseIds: Record<string, string> = {
+  tempo: "top",
+  addressPosture: "address",
+  impactPosition: "impact",
+  headStability: "address",
+  weightShift: "downswing",
+  earlyExtension: "impact",
+  rotation: "top",
+  consistency: "finish",
+};
 
 function getPhaseTime(
   phase: SwingPhase,
@@ -178,6 +190,11 @@ function AnalysisPage() {
     setSelectedMetricId,
   ] = useState<string | null>(null);
 
+  const [
+    previewedMetricId,
+    setPreviewedMetricId,
+  ] = useState<string | null>(null);
+
   useEffect(() => {
     async function loadAnalysis() {
       const result = await getAnalysis(
@@ -232,6 +249,59 @@ function AnalysisPage() {
             selectedMetric.id,
         ) ?? null
       : null;
+
+  function getMetricPhase(
+    metric: SwingMetric,
+  ) {
+    const phaseId =
+      metricPhaseIds[metric.id];
+
+    return (
+      swingPhases.find(
+        (phase) => phase.id === phaseId,
+      ) ?? swingPhases[0]
+    );
+  }
+
+  function previewMetricPhase(
+    metric: SwingMetric,
+  ) {
+    const phase = getMetricPhase(metric);
+
+    if (!phase) {
+      return;
+    }
+
+    setPreviewedMetricId(metric.id);
+    setSelectedPhaseId(phase.id);
+  }
+
+  function restorePlaybackPhase() {
+    setPreviewedMetricId(null);
+
+    const currentPhase = findCurrentPhase(
+      swingPhases,
+      currentTime,
+      videoDuration,
+    );
+
+    if (currentPhase) {
+      setSelectedPhaseId(currentPhase.id);
+    }
+  }
+
+  function handleMetricSelect(
+    metric: SwingMetric,
+  ) {
+    const phase = getMetricPhase(metric);
+
+    setPreviewedMetricId(null);
+    setSelectedMetricId(metric.id);
+
+    if (phase) {
+      handlePhaseSelect(phase);
+    }
+  }
 
   function handlePhaseSelect(
     phase: SwingPhase,
@@ -537,55 +607,95 @@ function AnalysisPage() {
           </div>
 
           <div className="mt-6 grid gap-6 sm:grid-cols-2 xl:grid-cols-5">
-            {swingMetrics.map((metric) => (
-              <button
-                key={metric.id}
-                aria-haspopup="dialog"
-                className="group h-full text-left focus:outline-none"
-                type="button"
-                onClick={() =>
-                  setSelectedMetricId(metric.id)
-                }
-              >
-                <Panel
-                  className="h-full transition duration-200 group-hover:-translate-y-1 group-hover:border-lime-soft/25 group-hover:shadow-lime group-focus-visible:ring-2 group-focus-visible:ring-lime-soft/60"
-                  padding="md"
-                  variant="raised"
+            {swingMetrics.map((metric) => {
+              const isMetricActive =
+                previewedMetricId === metric.id ||
+                selectedMetricId === metric.id;
+
+              return (
+                <button
+                  key={metric.id}
+                  aria-haspopup="dialog"
+                  className="group h-full text-left focus:outline-none"
+                  type="button"
+                  onBlur={restorePlaybackPhase}
+                  onClick={() =>
+                    handleMetricSelect(metric)
+                  }
+                  onFocus={() =>
+                    previewMetricPhase(metric)
+                  }
+                  onMouseEnter={() =>
+                    previewMetricPhase(metric)
+                  }
+                  onMouseLeave={
+                    restorePlaybackPhase
+                  }
                 >
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
-                      {metric.label}
+                  <Panel
+                    className={[
+                      "h-full transition duration-200 group-hover:-translate-y-1 group-focus-visible:ring-2 group-focus-visible:ring-lime-soft/60",
+                      isMetricActive
+                        ? "border-lime-soft/40 shadow-lime ring-1 ring-lime-soft/30"
+                        : "group-hover:border-lime-soft/25 group-hover:shadow-lime",
+                    ].join(" ")}
+                    padding="md"
+                    variant="raised"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p
+                        className={[
+                          "text-sm font-semibold uppercase tracking-[0.18em] transition",
+                          isMetricActive
+                            ? "text-lime-soft"
+                            : "text-copy-subtle",
+                        ].join(" ")}
+                      >
+                        {metric.label}
+                      </p>
+
+                      <Gauge
+                        className={[
+                          "text-lime-soft transition",
+                          isMetricActive
+                            ? "scale-110"
+                            : "group-hover:scale-110",
+                        ].join(" ")}
+                        size={18}
+                      />
+                    </div>
+
+                    <p className="mt-5 font-display text-4xl font-semibold tracking-[-0.05em] text-white">
+                      {metric.score}
                     </p>
 
-                    <Gauge
-                      className="text-lime-soft transition group-hover:scale-110"
-                      size={18}
-                    />
-                  </div>
+                    <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
+                      <div
+                        className="h-full rounded-full bg-lime-soft"
+                        style={{
+                          width: `${metric.score}%`,
+                        }}
+                      />
+                    </div>
 
-                  <p className="mt-5 font-display text-4xl font-semibold tracking-[-0.05em] text-white">
-                    {metric.score}
-                  </p>
+                    <p className="mt-4 text-sm leading-6 text-copy-muted">
+                      {metric.description}
+                    </p>
 
-                  <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
-                    <div
-                      className="h-full rounded-full bg-lime-soft"
-                      style={{
-                        width: `${metric.score}%`,
-                      }}
-                    />
-                  </div>
-
-                  <p className="mt-4 text-sm leading-6 text-copy-muted">
-                    {metric.description}
-                  </p>
-
-                  <p className="mt-5 text-xs font-semibold uppercase tracking-[0.16em] text-ice opacity-70 transition group-hover:opacity-100">
-                    View details
-                  </p>
-                </Panel>
-              </button>
-            ))}
+                    <p
+                      className={[
+                        "mt-5 text-xs font-semibold uppercase tracking-[0.16em] text-ice transition",
+                        isMetricActive
+                          ? "opacity-100"
+                          : "opacity-70 group-hover:opacity-100",
+                      ].join(" ")}
+                    >
+                      View details
+                    </p>
+                  </Panel>
+                </button>
+              );
+            })}
           </div>
 
           {clubAnalysis && (
