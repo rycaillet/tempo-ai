@@ -2,6 +2,12 @@ import type { Prisma } from "../generated/prisma/client.js";
 
 import { prisma } from "../lib/prisma.js";
 
+const ANALYSIS_STALE_AFTER_MS =
+  16 * 60 * 1000;
+
+const STALE_ANALYSIS_FAILURE_REASON =
+  "This analysis was interrupted before processing completed. Please upload the swing again.";
+
 type CreateAnalysisInput = {
   originalFilename: string;
   storedFilename: string;
@@ -148,6 +154,47 @@ function extractFirstMessage(value: unknown): string | undefined {
   return undefined;
 }
 
+function getStaleAnalysisCutoff() {
+  return new Date(
+    Date.now() - ANALYSIS_STALE_AFTER_MS,
+  );
+}
+
+async function failStaleAnalysisById(
+  id: string,
+): Promise<void> {
+  await prisma.analysis.updateMany({
+    where: {
+      id,
+      status: "PROCESSING",
+      updatedAt: {
+        lte: getStaleAnalysisCutoff(),
+      },
+    },
+    data: {
+      status: "FAILED",
+      failureReason:
+        STALE_ANALYSIS_FAILURE_REASON,
+    },
+  });
+}
+
+async function failAllStaleAnalyses(): Promise<void> {
+  await prisma.analysis.updateMany({
+    where: {
+      status: "PROCESSING",
+      updatedAt: {
+        lte: getStaleAnalysisCutoff(),
+      },
+    },
+    data: {
+      status: "FAILED",
+      failureReason:
+        STALE_ANALYSIS_FAILURE_REASON,
+    },
+  });
+}
+
 export async function createAnalysis(
   input: CreateAnalysisInput,
 ) {
@@ -163,6 +210,8 @@ export async function createAnalysis(
 }
 
 export async function getAnalysisById(id: string) {
+  await failStaleAnalysisById(id);
+
   return prisma.analysis.findUnique({
     where: {
       id,
@@ -171,6 +220,8 @@ export async function getAnalysisById(id: string) {
 }
 
 export async function getAnalyses() {
+  await failAllStaleAnalyses();
+
   return prisma.analysis.findMany({
     orderBy: {
       createdAt: "desc",
