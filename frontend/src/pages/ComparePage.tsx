@@ -5,12 +5,16 @@ import {
   CircleAlert,
   GitCompareArrows,
   LoaderCircle,
+  Pause,
+  Play,
+  RotateCcw,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -31,6 +35,7 @@ import {
 import type {
   SwingAnalysis,
   SwingMetric,
+  SwingPhase,
 } from "../types/analysis";
 
 type ComparisonMetric = {
@@ -135,6 +140,61 @@ function buildMetricComparisons(
   });
 }
 
+function getPhaseTimeSeconds(
+  phase: SwingPhase | undefined,
+) {
+  if (!phase) {
+    return 0;
+  }
+
+  const parsedTime = Number.parseFloat(
+    phase.timestamp.replace("s", ""),
+  );
+
+  if (
+    !Number.isFinite(parsedTime) ||
+    parsedTime < 0
+  ) {
+    return 0;
+  }
+
+  return parsedTime;
+}
+
+function findPhase(
+  analysis: SwingAnalysis,
+  phaseId: string,
+) {
+  return analysis.phases.find(
+    (phase) => phase.id === phaseId,
+  );
+}
+
+function seekVideoToPhase(
+  video: HTMLVideoElement | null,
+  analysis: SwingAnalysis,
+  phaseId: string,
+) {
+  if (!video) {
+    return;
+  }
+
+  const phaseTime = getPhaseTimeSeconds(
+    findPhase(analysis, phaseId),
+  );
+
+  const maximumTime =
+    Number.isFinite(video.duration) &&
+    video.duration > 0
+      ? video.duration
+      : phaseTime;
+
+  video.currentTime = Math.min(
+    phaseTime,
+    maximumTime,
+  );
+}
+
 function ScoreDifference({
   difference,
 }: {
@@ -188,6 +248,12 @@ function ComparePage() {
   const requestedComparisonId =
     searchParams.get("comparisonId");
 
+  const baselineVideoRef =
+    useRef<HTMLVideoElement | null>(null);
+
+  const comparisonVideoRef =
+    useRef<HTMLVideoElement | null>(null);
+
   const [records, setRecords] = useState<
     AnalysisRecord[]
   >([]);
@@ -207,10 +273,25 @@ function ComparePage() {
   const [isLoadingRecords, setIsLoadingRecords] =
     useState(true);
 
-  const [isLoadingComparison, setIsLoadingComparison] =
-    useState(false);
+  const [
+    isLoadingComparison,
+    setIsLoadingComparison,
+  ] = useState(false);
+
+  const [
+    selectedPhaseId,
+    setSelectedPhaseId,
+  ] = useState("address");
+
+  const [
+    isComparisonPlaying,
+    setIsComparisonPlaying,
+  ] = useState(false);
 
   const [error, setError] = useState("");
+
+  const [playbackError, setPlaybackError] =
+    useState("");
 
   useEffect(() => {
     let isCancelled = false;
@@ -375,6 +456,107 @@ function ComparePage() {
     baselineId.length > 0 &&
     comparisonId.length > 0 &&
     baselineId !== comparisonId;
+
+  const comparisonPhases =
+    baseline?.phases ?? comparison?.phases ?? [];
+
+  const selectedBaselinePhase =
+    baseline
+      ? findPhase(baseline, selectedPhaseId)
+      : undefined;
+
+  const selectedComparisonPhase =
+    comparison
+      ? findPhase(comparison, selectedPhaseId)
+      : undefined;
+
+  const hasBothVideos = Boolean(
+    baseline?.videoUrl &&
+      comparison?.videoUrl,
+  );
+
+  function pauseComparisonVideos() {
+    baselineVideoRef.current?.pause();
+    comparisonVideoRef.current?.pause();
+    setIsComparisonPlaying(false);
+  }
+
+  function handlePhaseSelect(
+    phaseId: string,
+  ) {
+    if (!baseline || !comparison) {
+      return;
+    }
+
+    pauseComparisonVideos();
+    setPlaybackError("");
+    setSelectedPhaseId(phaseId);
+
+    seekVideoToPhase(
+      baselineVideoRef.current,
+      baseline,
+      phaseId,
+    );
+
+    seekVideoToPhase(
+      comparisonVideoRef.current,
+      comparison,
+      phaseId,
+    );
+  }
+
+  async function handleSharedPlay() {
+    const baselineVideo =
+      baselineVideoRef.current;
+
+    const comparisonVideo =
+      comparisonVideoRef.current;
+
+    if (
+      !baselineVideo ||
+      !comparisonVideo ||
+      !hasBothVideos
+    ) {
+      setPlaybackError(
+        "Both analyses need an available video for synchronized playback.",
+      );
+
+      return;
+    }
+
+    try {
+      setPlaybackError("");
+
+      await Promise.all([
+        baselineVideo.play(),
+        comparisonVideo.play(),
+      ]);
+
+      setIsComparisonPlaying(true);
+    } catch {
+      baselineVideo.pause();
+      comparisonVideo.pause();
+      setIsComparisonPlaying(false);
+
+      setPlaybackError(
+        "The browser could not begin synchronized playback.",
+      );
+    }
+  }
+
+  function handleRestart() {
+    pauseComparisonVideos();
+    setPlaybackError("");
+    setSelectedPhaseId("address");
+
+    if (baselineVideoRef.current) {
+      baselineVideoRef.current.currentTime = 0;
+    }
+
+    if (comparisonVideoRef.current) {
+      comparisonVideoRef.current.currentTime = 0;
+    }
+  }
 
   return (
     <main className="min-h-screen bg-canvas text-copy">
@@ -624,6 +806,181 @@ function ComparePage() {
 
                 <Panel
                   className="mt-6"
+                  padding="none"
+                  variant="raised"
+                >
+                  <div className="flex flex-col gap-5 border-b border-white/10 px-6 py-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-ice">
+                        Synchronized review
+                      </p>
+
+                      <h2 className="mt-3 font-display text-3xl font-semibold text-white">
+                        Compare the same swing phase
+                      </h2>
+
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-copy-muted">
+                        Select a phase to seek each video
+                        to its independently detected
+                        reference frame.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        disabled={!hasBothVideos}
+                        onClick={
+                          isComparisonPlaying
+                            ? pauseComparisonVideos
+                            : () => {
+                                void handleSharedPlay();
+                              }
+                        }
+                        size="sm"
+                      >
+                        {isComparisonPlaying ? (
+                          <>
+                            <Pause size={16} />
+                            Pause both
+                          </>
+                        ) : (
+                          <>
+                            <Play size={16} />
+                            Play both
+                          </>
+                        )}
+                      </Button>
+
+                      <Button
+                        onClick={handleRestart}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        <RotateCcw size={16} />
+                        Restart
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-px bg-white/10 lg:grid-cols-2">
+                    <div className="bg-surface-raised">
+                      <div className="flex items-center justify-between gap-4 px-5 py-4">
+                        <Badge variant="neutral">
+                          Baseline
+                        </Badge>
+
+                        <span className="text-xs font-semibold text-copy-subtle">
+                          {selectedBaselinePhase?.label ??
+                            "Phase unavailable"}
+                          {" · "}
+                          {selectedBaselinePhase?.timestamp ??
+                            "—"}
+                        </span>
+                      </div>
+
+                      <div className="relative aspect-video bg-black">
+                        {baseline.videoUrl ? (
+                          <video
+                            ref={baselineVideoRef}
+                            className="h-full w-full object-contain"
+                            playsInline
+                            preload="metadata"
+                            src={baseline.videoUrl}
+                            onEnded={() =>
+                              setIsComparisonPlaying(false)
+                            }
+                          >
+                            Your browser does not support
+                            video playback.
+                          </video>
+                        ) : (
+                          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-copy-muted">
+                            Baseline video unavailable
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-surface-raised">
+                      <div className="flex items-center justify-between gap-4 px-5 py-4">
+                        <Badge variant="success">
+                          Comparison
+                        </Badge>
+
+                        <span className="text-xs font-semibold text-copy-subtle">
+                          {selectedComparisonPhase?.label ??
+                            "Phase unavailable"}
+                          {" · "}
+                          {selectedComparisonPhase?.timestamp ??
+                            "—"}
+                        </span>
+                      </div>
+
+                      <div className="relative aspect-video bg-black">
+                        {comparison.videoUrl ? (
+                          <video
+                            ref={comparisonVideoRef}
+                            className="h-full w-full object-contain"
+                            playsInline
+                            preload="metadata"
+                            src={comparison.videoUrl}
+                            onEnded={() =>
+                              setIsComparisonPlaying(false)
+                            }
+                          >
+                            Your browser does not support
+                            video playback.
+                          </video>
+                        ) : (
+                          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-copy-muted">
+                            Comparison video unavailable
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/10 px-5 py-5">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 lg:gap-3">
+                      {comparisonPhases.map((phase) => {
+                        const isSelected =
+                          phase.id === selectedPhaseId;
+
+                        return (
+                          <button
+                            key={phase.id}
+                            aria-pressed={isSelected}
+                            className={[
+                              "min-h-14 w-full whitespace-normal rounded-xl border px-3 py-3 text-center text-[10px] font-semibold uppercase leading-tight tracking-[0.04em] transition",
+                              isSelected
+                                ? "border-lime-soft/40 bg-lime-soft/10 text-lime-soft"
+                                : "border-white/10 bg-black/10 text-copy-subtle hover:border-white/20 hover:text-white",
+                            ].join(" ")}
+                            type="button"
+                            onClick={() =>
+                              handlePhaseSelect(
+                                phase.id,
+                              )
+                            }
+                          >
+                            {phase.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {playbackError && (
+                    <div className="border-t border-red-400/20 bg-red-400/5 px-6 py-4">
+                      <p className="text-sm text-red-200">
+                        {playbackError}
+                      </p>
+                    </div>
+                  )}
+                </Panel>
+
+                <Panel
+                  className="mt-6"
                   padding="lg"
                   variant="raised"
                 >
@@ -645,95 +1002,107 @@ function ComparePage() {
 
                   <div className="mt-8">
                     <div className="space-y-3 sm:hidden">
-                        {metricComparisons.map((metric) => (
-                            <div
-                                key={metric.id}
-                                className="rounded-2xl border border-white/10 bg-black/10 p-4"
-                            >
-                                <p className="font-semibold text-white">
-                                    {metric.label}
+                      {metricComparisons.map(
+                        (metric) => (
+                          <div
+                            key={metric.id}
+                            className="rounded-2xl border border-white/10 bg-black/10 p-4"
+                          >
+                            <p className="font-semibold text-white">
+                              {metric.label}
+                            </p>
+
+                            <div className="mt-4 grid grid-cols-3 gap-3">
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-subtle">
+                                  Before
                                 </p>
 
-                                <div className="mt-4 grid grid-cols-3 gap-3">
-                                    <div>
-                                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-subtle">
-                                        Before
-                                        </p>
+                                <p className="mt-2 font-display text-2xl font-semibold text-copy-muted">
+                                  {metric.baselineScore ??
+                                    "—"}
+                                </p>
+                              </div>
 
-                                        <p className="mt-2 font-display text-2xl font-semibold text-copy-muted">
-                                            {metric.baselineScore ?? "—"}
-                                        </p>
-                                    </div>
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-subtle">
+                                  After
+                                </p>
 
-                                    <div>
-                                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-subtle">
-                                            After
-                                        </p>
+                                <p className="mt-2 font-display text-2xl font-semibold text-white">
+                                  {metric.comparisonScore ??
+                                    "—"}
+                                </p>
+                              </div>
 
-                                        <p className="mt-2 font-display text-2xl font-semibold text-white">
-                                            {metric.comparisonScore ?? "—"}
-                                        </p>
-                                    </div>
+                              <div className="text-right">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-subtle">
+                                  Change
+                                </p>
 
-                                    <div className="text-right">
-                                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-subtle">
-                                            Change
-                                        </p>
-
-                                    <div className="mt-3 flex justify-end">
-                                        <ScoreDifference
-                                        difference={metric.difference}
-                                    />
+                                <div className="mt-3 flex justify-end">
+                                  <ScoreDifference
+                                    difference={
+                                      metric.difference
+                                    }
+                                  />
                                 </div>
+                              </div>
                             </div>
-                        </div>
+                          </div>
+                        ),
+                      )}
                     </div>
-                ))}
-            </div>
 
-            <div className="hidden overflow-hidden rounded-2xl border border-white/10 sm:block">
-                <div className="grid grid-cols-[minmax(0,1fr)_110px_110px_100px] gap-3 border-b border-white/10 bg-white/[0.03] px-5 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-copy-subtle">
-                    <span>Metric</span>
+                    <div className="hidden overflow-hidden rounded-2xl border border-white/10 sm:block">
+                      <div className="grid grid-cols-[minmax(0,1fr)_110px_110px_100px] gap-3 border-b border-white/10 bg-white/[0.03] px-5 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-copy-subtle">
+                        <span>Metric</span>
 
-                    <span className="text-center">
-                        Before
-                    </span>
-
-                    <span className="text-center">
-                        After
-                    </span>
-
-                    <span className="text-right">
-                        Change
-                    </span>
-                </div>
-
-                {metricComparisons.map((metric) => (
-                    <div
-                        key={metric.id}
-                        className="grid grid-cols-[minmax(0,1fr)_110px_110px_100px] items-center gap-3 border-b border-white/8 px-5 py-4 last:border-b-0"
-                    >
-                        <span className="min-w-0 font-semibold text-white">
-                            {metric.label}
+                        <span className="text-center">
+                          Before
                         </span>
 
-                        <span className="text-center font-display text-xl font-semibold text-copy-muted">
-                            {metric.baselineScore ?? "—"}
-                        </span>
-
-                        <span className="text-center font-display text-xl font-semibold text-white">
-                            {metric.comparisonScore ?? "—"}
+                        <span className="text-center">
+                          After
                         </span>
 
                         <span className="text-right">
-                            <ScoreDifference
-                            difference={metric.difference}
-                        />
-                    </span>
-                </div>
-            ))}
-        </div>
-    </div>
+                          Change
+                        </span>
+                      </div>
+
+                      {metricComparisons.map(
+                        (metric) => (
+                          <div
+                            key={metric.id}
+                            className="grid grid-cols-[minmax(0,1fr)_110px_110px_100px] items-center gap-3 border-b border-white/8 px-5 py-4 last:border-b-0"
+                          >
+                            <span className="min-w-0 font-semibold text-white">
+                              {metric.label}
+                            </span>
+
+                            <span className="text-center font-display text-xl font-semibold text-copy-muted">
+                              {metric.baselineScore ??
+                                "—"}
+                            </span>
+
+                            <span className="text-center font-display text-xl font-semibold text-white">
+                              {metric.comparisonScore ??
+                                "—"}
+                            </span>
+
+                            <span className="text-right">
+                              <ScoreDifference
+                                difference={
+                                  metric.difference
+                                }
+                              />
+                            </span>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </div>
                 </Panel>
               </>
             )}
