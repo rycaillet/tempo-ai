@@ -3,35 +3,57 @@ import type { ReactNode } from "react";
 type ScoreRingProps = {
   score: number;
   label: string;
+  rating?: string | null;
   subtitle?: string;
   icon?: ReactNode;
 };
 
+function getFallbackRating(score: number) {
+  if (score >= 90) {
+    return "Elite";
+  }
+
+  if (score >= 80) {
+    return "Excellent";
+  }
+
+  if (score >= 70) {
+    return "Good";
+  }
+
+  if (score >= 60) {
+    return "Average";
+  }
+
+  return "Needs Work";
+}
+
 function ScoreRing({
   score,
   label,
+  rating,
   subtitle,
   icon,
 }: ScoreRingProps) {
-  const percentage = Math.max(0, Math.min(score, 100));
+  const percentage = Math.max(
+    0,
+    Math.min(score, 100),
+  );
 
   const radius = 82;
-  const circumference = 2 * Math.PI * radius;
+  const circumference =
+    2 * Math.PI * radius;
 
   const dashOffset =
-    circumference - (percentage / 100) * circumference;
+    circumference -
+    (percentage / 100) * circumference;
 
-  let rating = "Needs Work";
-
-  if (score >= 90) rating = "Elite";
-  else if (score >= 80) rating = "Excellent";
-  else if (score >= 70) rating = "Good";
-  else if (score >= 60) rating = "Average";
+  const displayedRating =
+    rating?.trim() || getFallbackRating(score);
 
   return (
     <div className="flex flex-col items-center">
       <div className="relative flex h-64 w-64 items-center justify-center">
-        {/* subtle glow */}
         <div className="absolute h-40 w-40 rounded-full bg-lime-soft/10 blur-3xl" />
 
         <svg
@@ -79,7 +101,7 @@ function ScoreRing({
       </h3>
 
       <p className="mt-1 text-sm font-medium text-lime-soft">
-        {rating}
+        {displayedRating}
       </p>
 
       {subtitle && (

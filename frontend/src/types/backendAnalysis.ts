@@ -5,7 +5,9 @@ export type BackendMetricKey =
   | "headStability"
   | "weightShift"
   | "earlyExtension"
-  | "rotation";
+  | "rotation"
+  | "shaftLean"
+  | "swingPlane";
 
 export type BackendSeverity =
   | "high"
@@ -93,15 +95,26 @@ export type BackendRecommendations = {
   recommendations?: BackendRecommendation[];
 };
 
+export type BackendPublicRecommendations = {
+  status?: string;
+  warnings?: string[];
+  primaryFocus?: {
+    severity?: BackendSeverity;
+    metricKey?: BackendMetricKey;
+    displayName?: string;
+  } | null;
+  items?: BackendRecommendation[];
+};
+
 export type BackendCoaching = {
   status?: string;
-  headline?: string;
-  overview?: string;
+  headline?: string | null;
+  overview?: string | null;
   warnings?: string[];
-  disclaimer?: string;
+  disclaimer?: string | null;
   actionSteps?: string[];
-  primaryFocus?: string;
-  encouragement?: string;
+  primaryFocus?: string | null;
+  encouragement?: string | null;
 };
 
 export type BackendPhaseFrame = {
@@ -140,6 +153,38 @@ export type BackendTempoMetric = {
     backswingDurationSeconds?: number;
     downswingDurationSeconds?: number;
   };
+};
+
+export type BackendAnalysisMetricCard = {
+  metricKey?: BackendMetricKey;
+  displayName?: string;
+  score?: number | null;
+  confidence?: number | null;
+  scoreStatus?: string | null;
+  weightedScore?: number | null;
+  classification?: string | null;
+  deliveryStatus?: string | null;
+  feedbackStatus?: string | null;
+  measurementCompleteness?: number | null;
+};
+
+export type BackendAnalysisPayload = {
+  contractVersion?: string;
+  status?: "ready" | "partial";
+  score?: {
+    overallScore?: number;
+    confidence?: number;
+    coverage?: number;
+    rating?: string;
+    ratingLabel?: string;
+    status?: string;
+    summary?: string;
+  };
+  metrics?: BackendAnalysisMetricCard[];
+  coaching?: BackendCoaching | null;
+  findings?: BackendFindings;
+  recommendations?: BackendPublicRecommendations;
+  limitations?: string[];
 };
 
 export type BackendAnalysisReport = {

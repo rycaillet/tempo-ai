@@ -317,7 +317,9 @@ function HistoryPage() {
                       ? `/analysis/${analysis.id}`
                       : analysis.status ===
                           "PROCESSING"
-                        ? `/analysis/processing/${analysis.id}`
+                        ? `/analysis/processing?analysisId=${encodeURIComponent(
+                            analysis.id,
+                          )}`
                         : "/analysis/new";
 
                   return (

@@ -46,6 +46,7 @@ export type AnalysisSummary = {
   cameraAngle: string | null;
   date: string;
   overallScore: number;
+  ratingLabel: string | null;
   change: string | null;
   summary: string;
   strength: string;
