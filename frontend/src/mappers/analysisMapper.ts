@@ -308,6 +308,50 @@ function mapMetrics(
             null,
             record,
           ),
+          phase: metricPhaseNames[metricKey],
+          classification:
+            formatClassification(
+              metric.classification ??
+                undefined,
+            ),
+          confidence: normalizeOptionalNumber(
+            metric.confidence ??
+              record.analysisReport?.scoring
+                ?.metrics?.[metricKey]
+                ?.confidence,
+          ),
+          measurementCompleteness:
+            normalizeOptionalNumber(
+              metric.measurementCompleteness,
+            ),
+          feedbackStatus:
+            formatClassification(
+              metric.feedbackStatus ??
+                undefined,
+            ),
+          deliveryStatus:
+            formatClassification(
+              metric.deliveryStatus ??
+                undefined,
+            ),
+          scoreStatus:
+            formatClassification(
+              metric.scoreStatus ??
+                undefined,
+            ),
+          configuredWeight:
+            normalizeOptionalNumber(
+              record.analysisReport?.scoring
+                ?.metrics?.[metricKey]
+                ?.configuredWeight,
+            ),
+          weightedContribution:
+            normalizeOptionalNumber(
+              record.analysisReport?.scoring
+                ?.metrics?.[metricKey]
+                ?.weightedContribution ??
+                metric.weightedScore,
+            ),
         },
       ];
     },
@@ -342,6 +386,29 @@ function mapMetrics(
             metric.reason,
             record,
           ),
+          phase: metricPhaseNames[metricKey],
+          classification:
+            formatClassification(
+              metric.classification,
+            ),
+          confidence: normalizeOptionalNumber(
+            metric.confidence,
+          ),
+          measurementCompleteness: null,
+          feedbackStatus: null,
+          deliveryStatus: null,
+          scoreStatus:
+            formatClassification(
+              metric.status,
+            ),
+          configuredWeight:
+            normalizeOptionalNumber(
+              metric.configuredWeight,
+            ),
+          weightedContribution:
+            normalizeOptionalNumber(
+              metric.weightedContribution,
+            ),
         },
       ];
     },
@@ -361,6 +428,15 @@ function mapMetrics(
         ),
         description:
           "Measures the repeatability and stability of the detected swing movement.",
+        phase: "Overall Swing",
+        classification: null,
+        confidence: null,
+        measurementCompleteness: null,
+        feedbackStatus: null,
+        deliveryStatus: null,
+        scoreStatus: "Scored",
+        configuredWeight: null,
+        weightedContribution: null,
       },
     ];
   }
@@ -416,6 +492,7 @@ function mapRecommendationToFinding(
 
   return {
     id: `finding-${index + 1}`,
+    metricKey,
     priority:
       recommendation.priority ?? index + 1,
     title:
@@ -459,6 +536,7 @@ function mapPriorityToFinding(
 
   return {
     id: `finding-${index + 1}`,
+    metricKey,
     priority: index + 1,
     title: `Improve ${displayName}`,
     phase: metricPhaseNames[metricKey],
@@ -525,6 +603,7 @@ function mapFindings(
     return [
       {
         id: "finding-1",
+        metricKey: null,
         priority: 1,
         title:
           record.primaryFinding ??

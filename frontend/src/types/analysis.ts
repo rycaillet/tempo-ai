@@ -15,6 +15,15 @@ export type SwingMetric = {
   label: string;
   score: number;
   description: string;
+  phase: string;
+  classification: string | null;
+  confidence: number | null;
+  measurementCompleteness: number | null;
+  feedbackStatus: string | null;
+  deliveryStatus: string | null;
+  scoreStatus: string | null;
+  configuredWeight: number | null;
+  weightedContribution: number | null;
 };
 
 export type SwingDrill = {
@@ -24,6 +33,7 @@ export type SwingDrill = {
 
 export type SwingFinding = {
   id: string;
+  metricKey: string | null;
   priority: number;
   title: string;
   phase: string;
