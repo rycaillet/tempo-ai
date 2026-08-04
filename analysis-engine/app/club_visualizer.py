@@ -18,6 +18,11 @@ CANDIDATE_LINE_THICKNESS = 2
 CANDIDATE_LABEL_SCALE = 0.45
 CANDIDATE_LABEL_THICKNESS = 1
 
+PRESENTATION_LINE_THICKNESS = 6
+PRESENTATION_ENDPOINT_RADIUS = 8
+PRESENTATION_TEXT_SCALE = 0.62
+PRESENTATION_TEXT_THICKNESS = 1
+
 
 def create_club_visualization_directory(
     refined_phases_path: Path,
@@ -33,6 +38,23 @@ def create_club_visualization_directory(
     return (
         refined_phases_path.parent
         / f"{stem}-club-detection-frames"
+    )
+
+
+def create_club_presentation_directory(
+    refined_phases_path: Path,
+) -> Path:
+    file_name = refined_phases_path.name
+    suffix = "-refined-phases.json"
+
+    if file_name.endswith(suffix):
+        stem = file_name[:-len(suffix)]
+    else:
+        stem = refined_phases_path.stem
+
+    return (
+        refined_phases_path.parent
+        / f"{stem}-club-presentation-frames"
     )
 
 
@@ -67,6 +89,19 @@ def create_club_visualization_path(
     return output_directory / (
         f"{safe_phase_name}"
         f"-frame-{frame_index:06d}.jpg"
+    )
+
+
+def create_club_presentation_path(
+    output_directory: Path,
+    *,
+    phase_name: str,
+    frame_index: int,
+) -> Path:
+    return create_club_visualization_path(
+        output_directory,
+        phase_name=phase_name,
+        frame_index=frame_index,
     )
 
 
@@ -687,6 +722,190 @@ def draw_club_detection_visualization(
         next_line_number += 1
 
     return annotated_frame
+
+
+
+def draw_presentation_label(
+    image: np.ndarray,
+    text: str,
+    *,
+    origin: tuple[int, int],
+) -> None:
+    text_size, baseline = cv2.getTextSize(
+        text,
+        TEXT_FONT,
+        PRESENTATION_TEXT_SCALE,
+        PRESENTATION_TEXT_THICKNESS,
+    )
+
+    text_width, text_height = text_size
+    x, y = origin
+
+    cv2.rectangle(
+        image,
+        (
+            x - 8,
+            y - text_height - 8,
+        ),
+        (
+            x + text_width + 8,
+            y + baseline + 8,
+        ),
+        (16, 20, 24),
+        thickness=-1,
+    )
+
+    cv2.putText(
+        image,
+        text,
+        (x, y),
+        TEXT_FONT,
+        PRESENTATION_TEXT_SCALE,
+        (255, 255, 255),
+        PRESENTATION_TEXT_THICKNESS,
+        cv2.LINE_AA,
+    )
+
+
+def order_shaft_endpoints(
+    shaft_line: Mapping[str, Any],
+    hand_anchor: Mapping[str, Any] | None,
+) -> tuple[
+    tuple[int, int],
+    tuple[int, int],
+] | None:
+    start_value = shaft_line.get("start")
+    end_value = shaft_line.get("end")
+
+    if not (
+        isinstance(start_value, Mapping)
+        and isinstance(end_value, Mapping)
+    ):
+        return None
+
+    start_point = point_to_integer_tuple(
+        start_value
+    )
+    end_point = point_to_integer_tuple(
+        end_value
+    )
+
+    if (
+        start_point is None
+        or end_point is None
+    ):
+        return None
+
+    if hand_anchor is None:
+        return start_point, end_point
+
+    anchor_point = point_to_integer_tuple(
+        hand_anchor
+    )
+
+    if anchor_point is None:
+        return start_point, end_point
+
+    start_distance = (
+        (start_point[0] - anchor_point[0]) ** 2
+        + (start_point[1] - anchor_point[1]) ** 2
+    )
+    end_distance = (
+        (end_point[0] - anchor_point[0]) ** 2
+        + (end_point[1] - anchor_point[1]) ** 2
+    )
+
+    if start_distance <= end_distance:
+        return start_point, end_point
+
+    return end_point, start_point
+
+
+def draw_club_presentation_visualization(
+    frame: np.ndarray,
+    *,
+    phase_name: str,
+    frame_index: int,
+    hand_anchor: Mapping[str, Any] | None,
+    shaft_line: Mapping[str, Any],
+    confidence: float,
+    geometry_source: str,
+    detection_source: str,
+) -> np.ndarray:
+    """
+    Draw a clean customer-facing club visualization.
+
+    Unlike the diagnostic visualization, this view includes only the
+    selected shaft geometry, endpoint markers, and concise provenance.
+    """
+
+    if frame.size == 0:
+        raise ValueError(
+            "Cannot draw a presentation visualization "
+            "on an empty frame."
+        )
+
+    endpoints = order_shaft_endpoints(
+        shaft_line,
+        hand_anchor,
+    )
+
+    if endpoints is None:
+        raise ValueError(
+            "Presentation shaft geometry is invalid."
+        )
+
+    grip_point, clubhead_point = endpoints
+    annotated_frame = frame.copy()
+
+    cv2.line(
+        annotated_frame,
+        grip_point,
+        clubhead_point,
+        (255, 218, 104),
+        thickness=PRESENTATION_LINE_THICKNESS,
+        lineType=cv2.LINE_AA,
+    )
+
+    cv2.circle(
+        annotated_frame,
+        grip_point,
+        PRESENTATION_ENDPOINT_RADIUS,
+        (99, 255, 156),
+        thickness=-1,
+        lineType=cv2.LINE_AA,
+    )
+
+    cv2.circle(
+        annotated_frame,
+        clubhead_point,
+        PRESENTATION_ENDPOINT_RADIUS,
+        (255, 255, 255),
+        thickness=-1,
+        lineType=cv2.LINE_AA,
+    )
+
+    draw_presentation_label(
+        annotated_frame,
+        (
+            f"{phase_name} | "
+            f"frame {frame_index}"
+        ),
+        origin=(20, 34),
+    )
+
+    draw_presentation_label(
+        annotated_frame,
+        (
+            f"{geometry_source} geometry | "
+            f"{detection_source} detection | "
+            f"{confidence:.0%} confidence"
+        ),
+        origin=(20, 68),
+    )
+
+    return annotated_frame
+
 
 
 def save_club_detection_visualization(
