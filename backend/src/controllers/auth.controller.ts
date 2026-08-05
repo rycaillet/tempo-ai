@@ -14,8 +14,10 @@ import { env } from "../config/env.js";
 import { HttpError } from "../lib/http-error.js";
 import type { AuthenticatedLocals } from "../middleware/require-auth.middleware.js";
 import {
+  changeUserPassword,
   loginUser,
   registerUser,
+  updateUserProfile,
 } from "../services/auth.service.js";
 
 const emailSchema = z
@@ -25,6 +27,18 @@ const emailSchema = z
   .max(
     254,
     "Email address is too long.",
+  );
+
+const displayNameSchema = z
+  .string()
+  .trim()
+  .min(
+    2,
+    "Display name must be at least 2 characters.",
+  )
+  .max(
+    80,
+    "Display name must be 80 characters or fewer.",
   );
 
 const registrationPasswordSchema = z
@@ -40,19 +54,7 @@ const registrationPasswordSchema = z
 
 const registerSchema = z.object({
   email: emailSchema,
-
-  displayName: z
-    .string()
-    .trim()
-    .min(
-      2,
-      "Display name must be at least 2 characters.",
-    )
-    .max(
-      80,
-      "Display name must be 80 characters or fewer.",
-    ),
-
+  displayName: displayNameSchema,
   password: registrationPasswordSchema,
 });
 
@@ -69,6 +71,25 @@ const loginSchema = z.object({
       128,
       "Password must be 128 characters or fewer.",
     ),
+});
+
+const updateProfileSchema = z.object({
+  displayName: displayNameSchema,
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z
+    .string()
+    .min(
+      1,
+      "Enter your current password.",
+    )
+    .max(
+      128,
+      "Current password must be 128 characters or fewer.",
+    ),
+
+  newPassword: registrationPasswordSchema,
 });
 
 function parseRequestBody<T>(
@@ -92,19 +113,34 @@ function parseRequestBody<T>(
   return result.data;
 }
 
-async function revokeExistingSession(
+function getSessionToken(
   request: Request,
-): Promise<void> {
-  const existingToken =
+): string | null {
+  const sessionToken =
     request.cookies?.[
       env.SESSION_COOKIE_NAME
     ];
 
   if (
-    typeof existingToken === "string" &&
-    existingToken.length > 0
+    typeof sessionToken !== "string" ||
+    sessionToken.length === 0
   ) {
-    await revokeSession(existingToken);
+    return null;
+  }
+
+  return sessionToken;
+}
+
+async function revokeExistingSession(
+  request: Request,
+): Promise<void> {
+  const existingToken =
+    getSessionToken(request);
+
+  if (existingToken) {
+    await revokeSession(
+      existingToken,
+    );
   }
 }
 
@@ -119,7 +155,9 @@ export async function registerHandler(
       request.body,
     );
 
-    await revokeExistingSession(request);
+    await revokeExistingSession(
+      request,
+    );
 
     const result =
       await registerUser(input);
@@ -149,7 +187,9 @@ export async function loginHandler(
       request.body,
     );
 
-    await revokeExistingSession(request);
+    await revokeExistingSession(
+      request,
+    );
 
     const result =
       await loginUser(input);
@@ -180,6 +220,84 @@ export async function getCurrentUserHandler(
   });
 }
 
+export async function updateProfileHandler(
+  request: Request,
+  response: Response<
+    unknown,
+    AuthenticatedLocals
+  >,
+  next: NextFunction,
+) {
+  try {
+    const input = parseRequestBody(
+      updateProfileSchema,
+      request.body,
+    );
+
+    const user =
+      await updateUserProfile({
+        userId:
+          response.locals.authUser.id,
+        displayName:
+          input.displayName,
+      });
+
+    response.status(200).json({
+      user,
+      message:
+        "Your profile was updated.",
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function changePasswordHandler(
+  request: Request,
+  response: Response<
+    unknown,
+    AuthenticatedLocals
+  >,
+  next: NextFunction,
+) {
+  try {
+    const sessionToken =
+      getSessionToken(request);
+
+    if (!sessionToken) {
+      response.status(401).json({
+        message:
+          "Your session is no longer valid. Sign in again.",
+      });
+
+      return;
+    }
+
+    const input = parseRequestBody(
+      changePasswordSchema,
+      request.body,
+    );
+
+    await changeUserPassword({
+      userId:
+        response.locals.authUser.id,
+      currentPassword:
+        input.currentPassword,
+      newPassword:
+        input.newPassword,
+      currentSessionToken:
+        sessionToken,
+    });
+
+    response.status(200).json({
+      message:
+        "Your password was changed. Other signed-in sessions were closed.",
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function logoutHandler(
   request: Request,
   response: Response,
@@ -187,15 +305,12 @@ export async function logoutHandler(
 ) {
   try {
     const sessionToken =
-      request.cookies?.[
-        env.SESSION_COOKIE_NAME
-      ];
+      getSessionToken(request);
 
-    if (
-      typeof sessionToken === "string" &&
-      sessionToken.length > 0
-    ) {
-      await revokeSession(sessionToken);
+    if (sessionToken) {
+      await revokeSession(
+        sessionToken,
+      );
     }
 
     response.clearCookie(

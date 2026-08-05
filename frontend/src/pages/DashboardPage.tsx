@@ -28,6 +28,7 @@ import ScoreRing from "../components/ui/ScoreRing";
 import Section from "../components/ui/Section";
 import { useAuth } from "../hooks/useAuth";
 import {
+  getAnalysisPreview,
   getAnalysisRecords,
   type AnalysisRecord,
 } from "../services/analysisService";
@@ -55,7 +56,10 @@ function formatFilename(
   filename: string,
 ): string {
   const nameWithoutExtension =
-    filename.replace(/\.[^/.]+$/, "");
+    filename.replace(
+      /\.[^/.]+$/,
+      "",
+    );
 
   const cleanedName =
     nameWithoutExtension
@@ -95,8 +99,10 @@ function DashboardPage() {
   const [analyses, setAnalyses] =
     useState<AnalysisRecord[]>([]);
 
-  const [isLoading, setIsLoading] =
-    useState(true);
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true);
 
   const [error, setError] =
     useState("");
@@ -139,15 +145,16 @@ function DashboardPage() {
     };
   }, []);
 
-  const completedAnalyses = useMemo(
-    () =>
-      analyses.filter(
-        (analysis) =>
-          analysis.status ===
-          "COMPLETED",
-      ),
-    [analyses],
-  );
+  const completedAnalyses =
+    useMemo(
+      () =>
+        analyses.filter(
+          (analysis) =>
+            analysis.status ===
+            "COMPLETED",
+        ),
+      [analyses],
+    );
 
   const recentAnalyses =
     completedAnalyses.slice(0, 3);
@@ -155,17 +162,20 @@ function DashboardPage() {
   const latestAnalysis =
     completedAnalyses[0] ?? null;
 
-  const averageTempo = averageValues(
-    completedAnalyses
-      .map(
-        (analysis) =>
-          analysis.tempoRatio,
-      )
-      .filter(
-        (value): value is number =>
-          value !== null,
-      ),
-  );
+  const averageTempo =
+    averageValues(
+      completedAnalyses
+        .map(
+          (analysis) =>
+            analysis.tempoRatio,
+        )
+        .filter(
+          (
+            value,
+          ): value is number =>
+            value !== null,
+        ),
+    );
 
   const averageConsistency =
     averageValues(
@@ -175,13 +185,25 @@ function DashboardPage() {
             analysis.consistencyScore,
         )
         .filter(
-          (value): value is number =>
+          (
+            value,
+          ): value is number =>
             value !== null,
         ),
     );
 
   const latestScore =
     latestAnalysis?.swingScore ?? 0;
+
+  const latestRating =
+    latestAnalysis
+      ?.analysisPayload?.score
+      ?.ratingLabel ??
+    latestAnalysis
+      ?.analysisReport?.scoring
+      ?.interpretation
+      ?.ratingLabel ??
+    null;
 
   const hasCompletedAnalyses =
     completedAnalyses.length > 0;
@@ -232,7 +254,8 @@ function DashboardPage() {
               </p>
 
               <p className="mt-2 text-sm text-copy-muted">
-                Retrieving your private swing history.
+                Retrieving your private
+                swing history.
               </p>
             </Panel>
           ) : error ? (
@@ -262,7 +285,9 @@ function DashboardPage() {
                 variant="raised"
               >
                 <div className="flex size-16 items-center justify-center rounded-3xl border border-lime-soft/20 bg-lime-soft/10 text-lime-soft">
-                  <FileVideo2 size={30} />
+                  <FileVideo2
+                    size={30}
+                  />
                 </div>
 
                 <p className="mt-7 text-sm font-semibold uppercase tracking-[0.2em] text-lime-soft">
@@ -270,14 +295,16 @@ function DashboardPage() {
                 </p>
 
                 <h2 className="mt-3 max-w-xl font-display text-4xl font-semibold tracking-[-0.045em] text-white">
-                  Start building your swing profile.
+                  Start building your
+                  swing profile.
                 </h2>
 
                 <p className="mt-5 max-w-xl leading-7 text-copy-muted">
-                  Upload one swing video and TempoAI
-                  will measure your mechanics,
-                  generate coaching feedback, and save
-                  the result to your private history.
+                  Upload one swing video and
+                  TempoAI will measure your
+                  mechanics, generate coaching
+                  feedback, and save the result
+                  to your private history.
                 </p>
 
                 <Button
@@ -286,7 +313,9 @@ function DashboardPage() {
                   to="/analysis/new"
                 >
                   Analyze your first swing
-                  <ArrowRight size={18} />
+                  <ArrowRight
+                    size={18}
+                  />
                 </Button>
               </Panel>
 
@@ -339,7 +368,9 @@ function DashboardPage() {
                         className="flex items-start gap-4"
                       >
                         <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-lime-soft/10 text-lime-soft">
-                          <Icon size={20} />
+                          <Icon
+                            size={20}
+                          />
                         </div>
 
                         <div>
@@ -348,7 +379,9 @@ function DashboardPage() {
                           </p>
 
                           <p className="mt-1 text-sm leading-6 text-copy-muted">
-                            {description}
+                            {
+                              description
+                            }
                           </p>
                         </div>
                       </div>
@@ -367,7 +400,12 @@ function DashboardPage() {
                 >
                   <ScoreRing
                     label="Latest swing score"
-                    score={latestScore}
+                    rating={
+                      latestRating
+                    }
+                    score={
+                      latestScore
+                    }
                     subtitle="Most recent completed analysis"
                   />
                 </Panel>
@@ -394,12 +432,14 @@ function DashboardPage() {
                     }
                     title="Average tempo"
                     trend={
-                      averageTempo === null
+                      averageTempo ===
+                      null
                         ? "Not measured yet"
                         : "Across completed swings"
                     }
                     value={
-                      averageTempo === null
+                      averageTempo ===
+                      null
                         ? "—"
                         : `${averageTempo.toFixed(
                             2,
@@ -428,12 +468,14 @@ function DashboardPage() {
                     }
                     title="Average consistency"
                     trend={
-                      averageConsistency === null
+                      averageConsistency ===
+                      null
                         ? "Not measured yet"
                         : "Across completed swings"
                     }
                     value={
-                      averageConsistency === null
+                      averageConsistency ===
+                      null
                         ? "—"
                         : `${Math.round(
                             averageConsistency,
@@ -455,7 +497,8 @@ function DashboardPage() {
                       </p>
 
                       <p className="mt-1 text-sm text-copy-muted">
-                        Your latest completed swing analyses.
+                        Your latest completed
+                        swing analyses.
                       </p>
                     </div>
 
@@ -464,90 +507,137 @@ function DashboardPage() {
                       to="/history"
                     >
                       View all
-                      <ArrowRight size={16} />
+                      <ArrowRight
+                        size={16}
+                      />
                     </Link>
                   </div>
 
                   <div className="divide-y divide-white/10">
                     {recentAnalyses.map(
-                      (analysis) => (
-                        <Link
-                          key={analysis.id}
-                          className="group grid gap-5 px-6 py-6 transition hover:bg-white/[0.025] md:grid-cols-[auto_1fr_auto] md:items-center"
-                          to={`/analysis/${analysis.id}`}
-                        >
-                          <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_center,_#173222_0%,_#0a130f_70%)] md:w-40">
-                            <div className="absolute h-[60%] w-[2px] rotate-[-10deg] bg-lime-soft shadow-[0_0_14px_rgba(132,255,77,0.55)]" />
+                      (analysis) => {
+                        const preview =
+                          getAnalysisPreview(
+                            analysis,
+                          );
 
-                            <div className="flex size-10 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white backdrop-blur">
-                              <Play
-                                fill="currentColor"
-                                size={16}
+                        const title =
+                          formatFilename(
+                            analysis.originalFilename,
+                          );
+
+                        return (
+                          <Link
+                            key={
+                              analysis.id
+                            }
+                            className="group grid gap-5 px-6 py-6 transition hover:bg-white/[0.025] md:grid-cols-[auto_1fr_auto] md:items-center"
+                            to={`/analysis/${analysis.id}`}
+                          >
+                            <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black md:w-40">
+                              {preview?.kind ===
+                              "image" ? (
+                                <img
+                                  alt={`${title} preview`}
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                  src={
+                                    preview.url
+                                  }
+                                />
+                              ) : preview?.kind ===
+                                "video" ? (
+                                <video
+                                  aria-label={`${title} preview`}
+                                  className="h-full w-full object-cover"
+                                  muted
+                                  playsInline
+                                  preload="metadata"
+                                  src={
+                                    preview.url
+                                  }
+                                />
+                              ) : (
+                                <FileVideo2
+                                  className="text-copy-subtle"
+                                  size={28}
+                                />
+                              )}
+
+                              <div className="absolute inset-0 bg-black/10 transition group-hover:bg-black/25" />
+
+                              <div className="absolute flex size-10 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white shadow-lg backdrop-blur-sm">
+                                <Play
+                                  fill="currentColor"
+                                  size={16}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <h2 className="truncate font-display text-lg font-semibold text-white transition group-hover:text-lime-soft">
+                                  {
+                                    title
+                                  }
+                                </h2>
+
+                                <Badge variant="success">
+                                  Complete
+                                </Badge>
+                              </div>
+
+                              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-copy-subtle">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <CalendarDays
+                                    size={
+                                      14
+                                    }
+                                  />
+
+                                  {formatDate(
+                                    analysis.createdAt,
+                                  )}
+                                </span>
+
+                                {analysis.tempoRatio !==
+                                  null && (
+                                  <span>
+                                    Tempo{" "}
+                                    {analysis.tempoRatio.toFixed(
+                                      2,
+                                    )}
+                                    :1
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="mt-4 line-clamp-2 text-sm text-copy-muted">
+                                {analysis.primaryFinding ??
+                                  "Open this analysis to review your measured swing results."}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-5 md:flex-col md:items-end">
+                              <div className="text-right">
+                                <p className="font-display text-4xl font-semibold tracking-[-0.05em] text-white">
+                                  {analysis.swingScore ??
+                                    "—"}
+                                </p>
+
+                                <p className="mt-1 text-xs uppercase tracking-[0.18em] text-copy-subtle">
+                                  Score
+                                </p>
+                              </div>
+
+                              <ArrowRight
+                                className="text-copy-subtle transition group-hover:translate-x-1 group-hover:text-lime-soft"
+                                size={20}
                               />
                             </div>
-                          </div>
-
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <h2 className="truncate font-display text-lg font-semibold text-white transition group-hover:text-lime-soft">
-                                {formatFilename(
-                                  analysis.originalFilename,
-                                )}
-                              </h2>
-
-                              <Badge variant="success">
-                                Complete
-                              </Badge>
-                            </div>
-
-                            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-copy-subtle">
-                              <span className="inline-flex items-center gap-1.5">
-                                <CalendarDays
-                                  size={14}
-                                />
-
-                                {formatDate(
-                                  analysis.createdAt,
-                                )}
-                              </span>
-
-                              {analysis.tempoRatio !==
-                                null && (
-                                <span>
-                                  Tempo{" "}
-                                  {analysis.tempoRatio.toFixed(
-                                    2,
-                                  )}
-                                  :1
-                                </span>
-                              )}
-                            </div>
-
-                            <p className="mt-4 line-clamp-2 text-sm text-copy-muted">
-                              {analysis.primaryFinding ??
-                                "Open this analysis to review your measured swing results."}
-                            </p>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-5 md:flex-col md:items-end">
-                            <div className="text-right">
-                              <p className="font-display text-4xl font-semibold tracking-[-0.05em] text-white">
-                                {analysis.swingScore ??
-                                  "—"}
-                              </p>
-
-                              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-copy-subtle">
-                                Score
-                              </p>
-                            </div>
-
-                            <ArrowRight
-                              className="text-copy-subtle transition group-hover:translate-x-1 group-hover:text-lime-soft"
-                              size={20}
-                            />
-                          </div>
-                        </Link>
-                      ),
+                          </Link>
+                        );
+                      },
                     )}
                   </div>
                 </Panel>
@@ -567,8 +657,9 @@ function DashboardPage() {
                     </h2>
 
                     <p className="mt-5 leading-7 text-copy-muted">
-                      This focus comes from your most
-                      recently completed swing analysis.
+                      This focus comes from
+                      your most recently
+                      completed swing analysis.
                     </p>
 
                     {latestAnalysis?.recommendation && (
@@ -595,12 +686,14 @@ function DashboardPage() {
                     </p>
 
                     <h2 className="mt-3 font-display text-2xl font-semibold text-white">
-                      Record another comparable swing.
+                      Record another
+                      comparable swing.
                     </h2>
 
                     <p className="mt-4 leading-7 text-copy-muted">
-                      Use a similar camera position and
-                      framing to make your results easier
+                      Use a similar camera
+                      position and framing to
+                      make your results easier
                       to compare.
                     </p>
 

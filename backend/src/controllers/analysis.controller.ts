@@ -10,6 +10,7 @@ import type { AuthenticatedLocals } from "../middleware/require-auth.middleware.
 import { startAnalysisProcessing } from "../services/analysis-processing.service.js";
 import {
   createAnalysis,
+  deleteAnalysisForUser,
   getAnalysesForUser,
   getAnalysisByIdForUser,
 } from "../services/analysis.service.js";
@@ -25,6 +26,22 @@ async function removeUploadedFile(
       error,
     );
   }
+}
+
+function getAnalysisId(
+  request: Request,
+): string | null {
+  const analysisId =
+    request.params.id;
+
+  if (
+    typeof analysisId !== "string" ||
+    analysisId.trim().length === 0
+  ) {
+    return null;
+  }
+
+  return analysisId.trim();
 }
 
 export async function createAnalysisHandler(
@@ -48,17 +65,21 @@ export async function createAnalysisHandler(
 
   try {
     const analysis = await createAnalysis({
-      userId: response.locals.authUser.id,
+      userId:
+        response.locals.authUser.id,
       originalFilename:
         uploadedFile.originalname,
       storedFilename:
         uploadedFile.filename,
-      mimeType: uploadedFile.mimetype,
+      mimeType:
+        uploadedFile.mimetype,
       fileSizeBytes:
         uploadedFile.size,
     });
 
-    startAnalysisProcessing(analysis.id);
+    startAnalysisProcessing(
+      analysis.id,
+    );
 
     response.status(201).json({
       analysis,
@@ -82,12 +103,9 @@ export async function getAnalysisHandler(
 ) {
   try {
     const analysisId =
-      request.params.id;
+      getAnalysisId(request);
 
-    if (
-      typeof analysisId !== "string" ||
-      analysisId.trim().length === 0
-    ) {
+    if (!analysisId) {
       response.status(400).json({
         message:
           "A valid analysis ID is required.",
@@ -104,7 +122,8 @@ export async function getAnalysisHandler(
 
     if (!analysis) {
       response.status(404).json({
-        message: "Analysis not found.",
+        message:
+          "Analysis not found.",
       });
 
       return;
@@ -134,6 +153,60 @@ export async function getAnalysesHandler(
 
     response.status(200).json({
       analyses,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteAnalysisHandler(
+  request: Request,
+  response: Response<
+    unknown,
+    AuthenticatedLocals
+  >,
+  next: NextFunction,
+) {
+  try {
+    const analysisId =
+      getAnalysisId(request);
+
+    if (!analysisId) {
+      response.status(400).json({
+        message:
+          "A valid analysis ID is required.",
+      });
+
+      return;
+    }
+
+    const result =
+      await deleteAnalysisForUser(
+        analysisId,
+        response.locals.authUser.id,
+      );
+
+    if (result.status === "not_found") {
+      response.status(404).json({
+        message:
+          "Analysis not found.",
+      });
+
+      return;
+    }
+
+    if (result.status === "processing") {
+      response.status(409).json({
+        message:
+          "This analysis is still processing and cannot be deleted yet.",
+      });
+
+      return;
+    }
+
+    response.status(200).json({
+      message:
+        "The swing analysis was deleted.",
     });
   } catch (error) {
     next(error);

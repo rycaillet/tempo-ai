@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import {
   createAnalysisHandler,
+  deleteAnalysisHandler,
   getAnalysesHandler,
   getAnalysisHandler,
 } from "../controllers/analysis.controller.js";
@@ -18,7 +19,19 @@ analysisRouter.post(
   createAnalysisHandler,
 );
 
-analysisRouter.get("/", getAnalysesHandler);
-analysisRouter.get("/:id", getAnalysisHandler);
+analysisRouter.get(
+  "/",
+  getAnalysesHandler,
+);
+
+analysisRouter.get(
+  "/:id",
+  getAnalysisHandler,
+);
+
+analysisRouter.delete(
+  "/:id",
+  deleteAnalysisHandler,
+);
 
 export default analysisRouter;

@@ -9,16 +9,20 @@ type ScoreRingProps = {
 };
 
 function getFallbackRating(score: number) {
-  if (score >= 90) {
+  if (score >= 95) {
     return "Elite";
   }
 
-  if (score >= 80) {
+  if (score >= 90) {
     return "Excellent";
   }
 
-  if (score >= 70) {
+  if (score >= 80) {
     return "Good";
+  }
+
+  if (score >= 70) {
+    return "Fair";
   }
 
   if (score >= 60) {
@@ -57,7 +61,7 @@ function ScoreRing({
         <div className="absolute h-40 w-40 rounded-full bg-lime-soft/10 blur-3xl" />
 
         <svg
-          className="-rotate-90 absolute"
+          className="absolute -rotate-90"
           width="220"
           height="220"
         >

@@ -2,8 +2,10 @@ import {
   hashPassword,
   verifyPassword,
 } from "../auth/password.js";
-
-import { createSession } from "../auth/session.js";
+import {
+  createSession,
+  revokeOtherSessions,
+} from "../auth/session.js";
 import { HttpError } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -25,6 +27,26 @@ type LoginUserInput = {
   email: string;
   password: string;
 };
+
+type UpdateProfileInput = {
+  userId: string;
+  displayName: string;
+};
+
+type ChangePasswordInput = {
+  userId: string;
+  currentPassword: string;
+  newPassword: string;
+  currentSessionToken: string;
+};
+
+const publicUserSelection = {
+  id: true,
+  email: true,
+  displayName: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 function normalizeEmail(
   email: string,
@@ -74,13 +96,7 @@ export async function registerUser(
         passwordHash,
       },
 
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: publicUserSelection,
     });
 
   const session =
@@ -109,12 +125,8 @@ export async function loginUser(
       },
 
       select: {
-        id: true,
-        email: true,
-        displayName: true,
+        ...publicUserSelection,
         passwordHash: true,
-        createdAt: true,
-        updatedAt: true,
       },
     });
 
@@ -146,4 +158,108 @@ export async function loginUser(
 
     sessionToken: session.token,
   };
+}
+
+export async function updateUserProfile(
+  input: UpdateProfileInput,
+): Promise<PublicUser> {
+  const displayName =
+    input.displayName.trim();
+
+  const existingUser =
+    await prisma.user.findUnique({
+      where: {
+        id: input.userId,
+      },
+
+      select: {
+        id: true,
+      },
+    });
+
+  if (!existingUser) {
+    throw new HttpError(
+      404,
+      "Account not found.",
+    );
+  }
+
+  return prisma.user.update({
+    where: {
+      id: input.userId,
+    },
+
+    data: {
+      displayName,
+    },
+
+    select: publicUserSelection,
+  });
+}
+
+export async function changeUserPassword(
+  input: ChangePasswordInput,
+): Promise<void> {
+  if (
+    input.currentPassword ===
+    input.newPassword
+  ) {
+    throw new HttpError(
+      400,
+      "Your new password must be different from your current password.",
+    );
+  }
+
+  const user =
+    await prisma.user.findUnique({
+      where: {
+        id: input.userId,
+      },
+
+      select: {
+        id: true,
+        passwordHash: true,
+      },
+    });
+
+  if (!user) {
+    throw new HttpError(
+      404,
+      "Account not found.",
+    );
+  }
+
+  const currentPasswordMatches =
+    await verifyPassword(
+      user.passwordHash,
+      input.currentPassword,
+    );
+
+  if (!currentPasswordMatches) {
+    throw new HttpError(
+      401,
+      "Your current password is incorrect.",
+    );
+  }
+
+  const newPasswordHash =
+    await hashPassword(
+      input.newPassword,
+    );
+
+  await prisma.user.update({
+    where: {
+      id: input.userId,
+    },
+
+    data: {
+      passwordHash:
+        newPasswordHash,
+    },
+  });
+
+  await revokeOtherSessions(
+    input.userId,
+    input.currentSessionToken,
+  );
 }

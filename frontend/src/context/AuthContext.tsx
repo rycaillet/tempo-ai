@@ -7,27 +7,22 @@ import {
 } from "react";
 
 import {
+  changePassword as changePasswordRequest,
   getCurrentUser,
   login as loginRequest,
   logout as logoutRequest,
   register as registerRequest,
+  updateProfile as updateProfileRequest,
+  type ChangePasswordInput,
+  type LoginInput,
+  type RegisterInput,
+  type UpdateProfileInput,
   type AuthUser,
 } from "../services/authService";
 import {
   AuthContext,
   type AuthContextValue,
 } from "./auth-context";
-
-type LoginInput = {
-  email: string;
-  password: string;
-};
-
-type RegisterInput = {
-  displayName: string;
-  email: string;
-  password: string;
-};
 
 type AuthProviderProps = {
   children: ReactNode;
@@ -93,34 +88,72 @@ function AuthProvider({
     [],
   );
 
-  const logout = useCallback(async () => {
-    try {
-      await logoutRequest();
-    } finally {
-      setUser(null);
-    }
-  }, []);
+  const updateProfile = useCallback(
+    async (
+      input: UpdateProfileInput,
+    ) => {
+      const updatedUser =
+        await updateProfileRequest(
+          input,
+        );
 
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      user,
-      isAuthenticated: user !== null,
-      isInitializing,
-      login,
-      register,
-      logout,
-    }),
-    [
-      user,
-      isInitializing,
-      login,
-      register,
-      logout,
-    ],
+      setUser(updatedUser);
+
+      return updatedUser;
+    },
+    [],
   );
 
+  const changePassword = useCallback(
+    async (
+      input: ChangePasswordInput,
+    ) => {
+      return changePasswordRequest(
+        input,
+      );
+    },
+    [],
+  );
+
+  const logout = useCallback(
+    async () => {
+      try {
+        await logoutRequest();
+      } finally {
+        setUser(null);
+      }
+    },
+    [],
+  );
+
+  const value =
+    useMemo<AuthContextValue>(
+      () => ({
+        user,
+        isAuthenticated:
+          user !== null,
+        isInitializing,
+        login,
+        register,
+        updateProfile,
+        changePassword,
+        logout,
+      }),
+      [
+        user,
+        isInitializing,
+        login,
+        register,
+        updateProfile,
+        changePassword,
+        logout,
+      ],
+    );
+
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={value}
+    >
       {children}
     </AuthContext.Provider>
   );

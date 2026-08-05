@@ -2,10 +2,12 @@ import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 
 import {
+  changePasswordHandler,
   getCurrentUserHandler,
   loginHandler,
   logoutHandler,
   registerHandler,
+  updateProfileHandler,
 } from "../controllers/auth.controller.js";
 import { requireAuth } from "../middleware/require-auth.middleware.js";
 
@@ -35,6 +37,18 @@ const registrationRateLimit = rateLimit({
   },
 });
 
+const passwordChangeRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+
+  message: {
+    message:
+      "Too many password change attempts. Try again later.",
+  },
+});
+
 authRouter.post(
   "/register",
   registrationRateLimit,
@@ -51,6 +65,19 @@ authRouter.get(
   "/me",
   requireAuth,
   getCurrentUserHandler,
+);
+
+authRouter.patch(
+  "/profile",
+  requireAuth,
+  updateProfileHandler,
+);
+
+authRouter.post(
+  "/change-password",
+  requireAuth,
+  passwordChangeRateLimit,
+  changePasswordHandler,
 );
 
 authRouter.post(

@@ -1,5 +1,9 @@
+import { rm } from "node:fs/promises";
+import path from "node:path";
+
 import type { Prisma } from "../generated/prisma/client.js";
 
+import { analysisUploadDirectory } from "../config/upload.js";
 import { prisma } from "../lib/prisma.js";
 
 const ANALYSIS_STALE_AFTER_MS =
@@ -17,6 +21,17 @@ type CreateAnalysisInput = {
 };
 
 type JsonRecord = Record<string, unknown>;
+
+export type DeleteAnalysisResult =
+  | {
+      status: "deleted";
+    }
+  | {
+      status: "not_found";
+    }
+  | {
+      status: "processing";
+    };
 
 function isJsonRecord(value: unknown): value is JsonRecord {
   return (
@@ -175,6 +190,67 @@ function getStaleAnalysisCutoff() {
   );
 }
 
+function getStoredVideoPath(
+  storedFilename: string,
+): string {
+  const safeFilename =
+    path.basename(storedFilename);
+
+  return path.resolve(
+    analysisUploadDirectory,
+    safeFilename,
+  );
+}
+
+function getAnalysisArtifactDirectory(
+  analysisId: string,
+): string {
+  const safeAnalysisId =
+    path.basename(analysisId);
+
+  return path.resolve(
+    analysisUploadDirectory,
+    safeAnalysisId,
+  );
+}
+
+async function removeAnalysisFiles({
+  analysisId,
+  storedFilename,
+}: {
+  analysisId: string;
+  storedFilename: string | null;
+}): Promise<void> {
+  const removalOperations: Promise<void>[] = [];
+
+  if (storedFilename) {
+    removalOperations.push(
+      rm(
+        getStoredVideoPath(
+          storedFilename,
+        ),
+        {
+          force: true,
+        },
+      ),
+    );
+  }
+
+  removalOperations.push(
+    rm(
+      getAnalysisArtifactDirectory(
+        analysisId,
+      ),
+      {
+        recursive: true,
+        force: true,
+      },
+    ),
+  );
+
+  await Promise.all(removalOperations);
+}
+
 async function failStaleAnalysisById(
   id: string,
 ): Promise<void> {
@@ -272,6 +348,66 @@ export async function getAnalysesForUser(
       createdAt: "desc",
     },
   });
+}
+
+export async function deleteAnalysisForUser(
+  id: string,
+  userId: string,
+): Promise<DeleteAnalysisResult> {
+  await failStaleAnalysisById(id);
+
+  const analysis =
+    await prisma.analysis.findFirst({
+      where: {
+        id,
+        userId,
+      },
+
+      select: {
+        id: true,
+        status: true,
+        storedFilename: true,
+      },
+    });
+
+  if (!analysis) {
+    return {
+      status: "not_found",
+    };
+  }
+
+  if (
+    analysis.status === "PROCESSING" ||
+    analysis.status === "UPLOADING"
+  ) {
+    return {
+      status: "processing",
+    };
+  }
+
+  await removeAnalysisFiles({
+    analysisId: analysis.id,
+    storedFilename:
+      analysis.storedFilename,
+  });
+
+  const deletionResult =
+    await prisma.analysis.deleteMany({
+      where: {
+        id,
+        userId,
+      },
+    });
+
+  if (deletionResult.count === 0) {
+    return {
+      status: "not_found",
+    };
+  }
+
+  return {
+    status: "deleted",
+  };
 }
 
 export async function completeAnalysis(

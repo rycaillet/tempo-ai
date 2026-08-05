@@ -151,6 +151,24 @@ export async function revokeSession(
   });
 }
 
+export async function revokeOtherSessions(
+  userId: string,
+  currentToken: string,
+): Promise<void> {
+  const currentTokenHash =
+    hashSessionToken(currentToken);
+
+  await prisma.session.deleteMany({
+    where: {
+      userId,
+
+      tokenHash: {
+        not: currentTokenHash,
+      },
+    },
+  });
+}
+
 export async function deleteExpiredSessions(): Promise<void> {
   await prisma.session.deleteMany({
     where: {

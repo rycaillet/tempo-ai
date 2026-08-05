@@ -10,23 +10,33 @@ export type AuthUser = {
   updatedAt: string;
 };
 
-type AuthResponse = {
-  user: AuthUser;
-};
-
-type MessageResponse = {
-  message: string;
-};
-
-type RegisterInput = {
+export type RegisterInput = {
   displayName: string;
   email: string;
   password: string;
 };
 
-type LoginInput = {
+export type LoginInput = {
   email: string;
   password: string;
+};
+
+export type UpdateProfileInput = {
+  displayName: string;
+};
+
+export type ChangePasswordInput = {
+  currentPassword: string;
+  newPassword: string;
+};
+
+type AuthResponse = {
+  user: AuthUser;
+  message?: string;
+};
+
+type MessageResponse = {
+  message: string;
 };
 
 async function parseResponse<T extends object>(
@@ -128,6 +138,52 @@ export async function getCurrentUser(): Promise<
     );
 
   return data.user;
+}
+
+export async function updateProfile(
+  input: UpdateProfileInput,
+): Promise<AuthUser> {
+  const response = await fetch(
+    `${apiBaseUrl}/auth/profile`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+
+  const data =
+    await parseResponse<AuthResponse>(
+      response,
+    );
+
+  return data.user;
+}
+
+export async function changePassword(
+  input: ChangePasswordInput,
+): Promise<string> {
+  const response = await fetch(
+    `${apiBaseUrl}/auth/change-password`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+
+  const data =
+    await parseResponse<MessageResponse>(
+      response,
+    );
+
+  return data.message;
 }
 
 export async function logout(): Promise<void> {
