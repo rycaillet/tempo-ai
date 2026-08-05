@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: tempo-ai-api
+    runtime: docker
+    region: virginia
+    plan: starter
+
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    healthCheckPath: /api/health
+    preDeployCommand: cd /app/backend && npx prisma migrate deploy
+    maxShutdownDelaySeconds: 60
+
+    disk:
+      name: tempo-ai-uploads
+      mountPath: /app/backend/uploads
+      sizeGB: 10
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: "10000"
+
+      - key: DATABASE_URL
+        sync: false
+
+      - key: CLIENT_URL
+        sync: false
+
+      - key: ANALYSIS_ENGINE_PATH
+        value: /app/analysis-engine
+
+      - key: PYTHON_EXECUTABLE
+        value: /app/analysis-engine/.venv/bin/python
+
+      - key: ANALYSIS_API_VERSION
+        value: 1.0.0
+
+      - key: SESSION_COOKIE_NAME
+        value: tempo_ai_session
+
+      - key: SESSION_TTL_DAYS
+        value: "7"
+
+      - key: SESSION_COOKIE_SAME_SITE
+        value: none
+
+      - key: OPENAI_API_KEY
+        sync: false
