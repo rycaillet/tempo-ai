@@ -47,4 +47,4 @@ ENV PYTHON_EXECUTABLE=/app/analysis-engine/.venv/bin/python
 
 EXPOSE 10000
 
-CMD ["node", "dist/server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
