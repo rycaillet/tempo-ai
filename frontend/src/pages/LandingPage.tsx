@@ -1,4 +1,7 @@
-import { ArrowRight, Play } from "lucide-react";
+import {
+  ArrowRight,
+  Play,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 
 import Badge from "../components/ui/Badge";
@@ -6,8 +9,6 @@ import Button from "../components/ui/Button";
 import Container from "../components/ui/Container";
 import Panel from "../components/ui/Panel";
 import Section from "../components/ui/Section";
-
-const swingPhases = ["Address", "Top", "Impact", "Finish"];
 
 function LandingPage() {
   return (
@@ -17,21 +18,27 @@ function LandingPage() {
       <nav className="relative z-10 py-6">
         <Container className="flex items-center justify-between">
           <Link
-            to="/"
             className="font-display text-xl font-semibold tracking-[-0.04em] text-white"
+            to="/"
           >
-            Tempo<span className="text-lime-soft">AI</span>
+            Tempo
+            <span className="text-lime-soft">
+              AI
+            </span>
           </Link>
 
           <div className="flex items-center gap-3">
             <Link
-              to="/login"
               className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition hover:text-white"
+              to="/login"
             >
               Log in
             </Link>
 
-            <Button to="/register" size="sm">
+            <Button
+              size="sm"
+              to="/register"
+            >
               Get started
             </Button>
           </div>
@@ -50,27 +57,44 @@ function LandingPage() {
 
             <h1 className="mt-6 max-w-3xl font-display text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-white sm:text-6xl lg:text-7xl">
               Every swing tells a story.
+
               <span className="mt-2 block text-copy-muted">
                 Understand yours.
               </span>
             </h1>
 
             <p className="mt-7 max-w-xl text-lg leading-8 text-copy-muted">
-              TempoAI transforms recorded golf swings into visual movement data,
-              focused coaching feedback, and practical drills.
+              TempoAI transforms recorded golf swings
+              into visual movement data, focused
+              coaching feedback, and practical drills.
             </p>
 
             <div className="mt-10 flex flex-wrap gap-4">
-              <Button to="/register" size="lg">
-                Analyze a swing
-                <ArrowRight size={18} strokeWidth={2.4} />
+              <Button
+                size="lg"
+                to="/register"
+              >
+                Analyze your swing
+                <ArrowRight
+                  size={18}
+                  strokeWidth={2.4}
+                />
               </Button>
 
-              <Button to="/dashboard" size="lg" variant="secondary">
+              <Button
+                size="lg"
+                to="/demo"
+                variant="secondary"
+              >
                 <Play size={17} />
-                View demo
+                View product demo
               </Button>
             </div>
+
+            <p className="mt-4 text-sm text-copy-subtle">
+              A free account is required to upload and
+              privately save swing analyses.
+            </p>
           </div>
 
           <div className="relative">
@@ -82,49 +106,53 @@ function LandingPage() {
               <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
                 <div>
                   <p className="text-sm font-medium text-white">
-                    Down-the-line analysis
+                    Address-position analysis
                   </p>
 
                   <p className="mt-1 text-xs text-copy-subtle">
-                    7 Iron · July 15
+                    7 Iron · Demo result
                   </p>
                 </div>
 
-                <Badge variant="success">Analysis complete</Badge>
+                <Badge variant="success">
+                  Analysis complete
+                </Badge>
               </div>
 
-              <div className="relative aspect-[4/3] bg-[radial-gradient(circle_at_center,_#173222_0%,_#0a130f_62%,_#060c09_100%)]">
-                <div className="absolute inset-x-10 bottom-10 top-10 rounded-[1.75rem] border border-white/10 bg-white/[0.025]" />
+              <Link
+                aria-label="Open the public TempoAI product demonstration"
+                className="group relative block overflow-hidden bg-black"
+                to="/demo"
+              >
+                <img
+                  alt="TempoAI demonstration showing a golfer at address with posture, club, ball, and body-tracking measurements"
+                  className="block h-auto w-full transition duration-500 group-hover:scale-[1.015]"
+                  loading="eager"
+                  src="/tempo-ai-demo-address-visual.png"
+                />
 
-                <div className="absolute left-1/2 top-1/2 h-[66%] w-[2px] -translate-x-1/2 -translate-y-1/2 rotate-[-8deg] bg-lime-soft shadow-[0_0_20px_rgba(132,255,77,0.7)]" />
+                <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/5" />
 
-                <div className="absolute left-[45%] top-[20%] size-7 rounded-full border-2 border-lime-soft shadow-[0_0_18px_rgba(132,255,77,0.65)]" />
+                <div className="absolute inset-x-5 bottom-5 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/65 px-4 py-3 backdrop-blur">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-copy-subtle">
+                      Selected phase
+                    </p>
 
-                <div className="absolute bottom-6 left-6 right-6 flex items-center justify-between rounded-2xl border border-white/10 bg-black/35 px-4 py-3 backdrop-blur">
-                  {swingPhases.map((phase, index) => (
-                    <div
-                      key={phase}
-                      className="flex flex-col items-center gap-2"
-                    >
-                      <span
-                        className={`size-2 rounded-full ${
-                          index === 2 ? "bg-lime-soft" : "bg-slate-600"
-                        }`}
-                      />
+                    <p className="mt-1 text-sm font-semibold text-lime-soft">
+                      Address
+                    </p>
+                  </div>
 
-                      <span
-                        className={`text-[10px] uppercase tracking-wider ${
-                          index === 2
-                            ? "text-lime-soft"
-                            : "text-copy-subtle"
-                        }`}
-                      >
-                        {phase}
-                      </span>
-                    </div>
-                  ))}
+                  <span className="inline-flex items-center gap-2 text-sm font-semibold text-white">
+                    Explore analysis
+                    <ArrowRight
+                      className="transition group-hover:translate-x-1"
+                      size={16}
+                    />
+                  </span>
                 </div>
-              </div>
+              </Link>
             </Panel>
 
             <Panel
@@ -133,7 +161,7 @@ function LandingPage() {
               variant="raised"
             >
               <p className="text-xs uppercase tracking-[0.2em] text-copy-subtle">
-                Swing score
+                Demo swing score
               </p>
 
               <p className="mt-2 font-display text-5xl font-semibold tracking-[-0.06em] text-white">
@@ -141,7 +169,7 @@ function LandingPage() {
               </p>
 
               <p className="mt-1 text-sm text-lime-soft">
-                +6 from last session
+                Good
               </p>
             </Panel>
           </div>

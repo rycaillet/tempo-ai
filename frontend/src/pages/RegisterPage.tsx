@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ArrowRight,
   CircleAlert,
   Eye,
@@ -93,17 +94,27 @@ function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-6 py-12 text-copy">
-      <div className="w-full max-w-md">
+    <main className="min-h-screen bg-canvas px-6 py-10 text-copy">
+      <div className="mx-auto w-full max-w-md">
         <Link
-          className="inline-flex items-center font-display text-2xl font-semibold tracking-[-0.04em] text-white"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-copy-muted transition hover:text-white"
           to="/"
         >
-          Tempo
-          <span className="text-lime-soft">
-            AI
-          </span>
+          <ArrowLeft size={17} />
+          Back to home
         </Link>
+
+        <div className="mt-10 text-center">
+          <Link
+            className="inline-flex items-center font-display text-2xl font-semibold tracking-[-0.04em] text-white"
+            to="/"
+          >
+            Tempo
+            <span className="text-lime-soft">
+              AI
+            </span>
+          </Link>
+        </div>
 
         <div className="mt-10 rounded-panel border border-white/10 bg-surface-raised p-6 shadow-panel sm:p-8">
           <div className="flex size-12 items-center justify-center rounded-2xl bg-lime-soft/10 text-lime-soft">
@@ -332,6 +343,7 @@ function RegisterPage() {
                     className="animate-spin"
                     size={18}
                   />
+
                   Creating account
                 </>
               ) : (
@@ -345,6 +357,7 @@ function RegisterPage() {
 
           <p className="mt-7 text-center text-sm text-copy-muted">
             Already have an account?{" "}
+
             <Link
               className="font-semibold text-lime-soft transition hover:text-white"
               to="/login"

@@ -9,6 +9,7 @@ import AppShell from "./components/layout/AppShell";
 import AnalysisPage from "./pages/AnalysisPage";
 import ComparePage from "./pages/ComparePage";
 import DashboardPage from "./pages/DashboardPage";
+import DemoPage from "./pages/DemoPage";
 import HistoryPage from "./pages/HistoryPage";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
@@ -34,8 +35,13 @@ function App() {
   return (
     <Routes>
       <Route
-        path="/"
         element={<LandingPage />}
+        path="/"
+      />
+
+      <Route
+        element={<DemoPage />}
+        path="/demo"
       />
 
       <Route
@@ -106,8 +112,8 @@ function App() {
       />
 
       <Route
-        path="*"
         element={<NotFoundPage />}
+        path="*"
       />
     </Routes>
   );
