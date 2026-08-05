@@ -95,6 +95,7 @@ export async function createAnalysis(
     `${apiBaseUrl}/analyses`,
     {
       method: "POST",
+      credentials: "include",
       body: formData,
     },
   );
@@ -116,6 +117,7 @@ export async function getAnalysisRecord(
     )}`,
     {
       cache: "no-store",
+      credentials: "include",
     },
   );
 
@@ -134,6 +136,7 @@ export async function getAnalysisRecords(): Promise<
     `${apiBaseUrl}/analyses`,
     {
       cache: "no-store",
+      credentials: "include",
     },
   );
 
@@ -170,5 +173,8 @@ export async function getAnalysis(
     );
   }
 
-  return mapBackendAnalysis(record, apiOrigin);
+  return mapBackendAnalysis(
+    record,
+    apiOrigin,
+  );
 }

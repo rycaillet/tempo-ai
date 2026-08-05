@@ -6,14 +6,17 @@ import type {
   Response,
 } from "express";
 
+import type { AuthenticatedLocals } from "../middleware/require-auth.middleware.js";
 import { startAnalysisProcessing } from "../services/analysis-processing.service.js";
 import {
   createAnalysis,
-  getAnalyses,
-  getAnalysisById,
+  getAnalysesForUser,
+  getAnalysisByIdForUser,
 } from "../services/analysis.service.js";
 
-async function removeUploadedFile(filePath: string) {
+async function removeUploadedFile(
+  filePath: string,
+) {
   try {
     await unlink(filePath);
   } catch (error) {
@@ -26,14 +29,18 @@ async function removeUploadedFile(filePath: string) {
 
 export async function createAnalysisHandler(
   request: Request,
-  response: Response,
+  response: Response<
+    unknown,
+    AuthenticatedLocals
+  >,
   next: NextFunction,
 ) {
   const uploadedFile = request.file;
 
   if (!uploadedFile) {
     response.status(400).json({
-      message: "Select a golf swing video to upload.",
+      message:
+        "Select a golf swing video to upload.",
     });
 
     return;
@@ -41,10 +48,14 @@ export async function createAnalysisHandler(
 
   try {
     const analysis = await createAnalysis({
-      originalFilename: uploadedFile.originalname,
-      storedFilename: uploadedFile.filename,
+      userId: response.locals.authUser.id,
+      originalFilename:
+        uploadedFile.originalname,
+      storedFilename:
+        uploadedFile.filename,
       mimeType: uploadedFile.mimetype,
-      fileSizeBytes: uploadedFile.size,
+      fileSizeBytes:
+        uploadedFile.size,
     });
 
     startAnalysisProcessing(analysis.id);
@@ -53,31 +64,43 @@ export async function createAnalysisHandler(
       analysis,
     });
   } catch (error) {
-    await removeUploadedFile(uploadedFile.path);
+    await removeUploadedFile(
+      uploadedFile.path,
+    );
+
     next(error);
   }
 }
 
 export async function getAnalysisHandler(
   request: Request,
-  response: Response,
+  response: Response<
+    unknown,
+    AuthenticatedLocals
+  >,
   next: NextFunction,
 ) {
   try {
-    const analysisId = request.params.id;
+    const analysisId =
+      request.params.id;
 
     if (
       typeof analysisId !== "string" ||
       analysisId.trim().length === 0
     ) {
       response.status(400).json({
-        message: "A valid analysis ID is required.",
+        message:
+          "A valid analysis ID is required.",
       });
 
       return;
     }
 
-    const analysis = await getAnalysisById(analysisId);
+    const analysis =
+      await getAnalysisByIdForUser(
+        analysisId,
+        response.locals.authUser.id,
+      );
 
     if (!analysis) {
       response.status(404).json({
@@ -97,11 +120,17 @@ export async function getAnalysisHandler(
 
 export async function getAnalysesHandler(
   _request: Request,
-  response: Response,
+  response: Response<
+    unknown,
+    AuthenticatedLocals
+  >,
   next: NextFunction,
 ) {
   try {
-    const analyses = await getAnalyses();
+    const analyses =
+      await getAnalysesForUser(
+        response.locals.authUser.id,
+      );
 
     response.status(200).json({
       analyses,

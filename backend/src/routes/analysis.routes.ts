@@ -6,8 +6,11 @@ import {
   getAnalysisHandler,
 } from "../controllers/analysis.controller.js";
 import { handleAnalysisVideoUpload } from "../middleware/analysis-upload.middleware.js";
+import { requireAuth } from "../middleware/require-auth.middleware.js";
 
 const analysisRouter = Router();
+
+analysisRouter.use(requireAuth);
 
 analysisRouter.post(
   "/",

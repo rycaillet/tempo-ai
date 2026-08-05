@@ -37,7 +37,7 @@ type ButtonProps = NativeButtonProps | LinkButtonProps | AnchorButtonProps;
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-lime !text-canvas-deep shadow-lime hover:bg-lime-bright hover:!text-canvas-deep",
+    "bg-lime text-black shadow-lime hover:bg-lime-bright hover:text-black",
   secondary:
     "border border-white/15 bg-white/5 text-white hover:border-white/25 hover:bg-white/10",
   ghost: "text-copy-muted hover:bg-white/5 hover:text-white",

@@ -9,6 +9,7 @@ const STALE_ANALYSIS_FAILURE_REASON =
   "This analysis was interrupted before processing completed. Please upload the swing again.";
 
 type CreateAnalysisInput = {
+  userId: string;
   originalFilename: string;
   storedFilename: string;
   mimeType: string;
@@ -62,7 +63,10 @@ function getFirstNumber(
   candidatePaths: readonly (readonly string[])[],
 ): number | undefined {
   for (const candidatePath of candidatePaths) {
-    const value = getNestedValue(source, candidatePath);
+    const value = getNestedValue(
+      source,
+      candidatePath,
+    );
 
     if (
       typeof value === "number" &&
@@ -80,7 +84,10 @@ function getFirstString(
   candidatePaths: readonly (readonly string[])[],
 ): string | undefined {
   for (const candidatePath of candidatePaths) {
-    const value = getNestedValue(source, candidatePath);
+    const value = getNestedValue(
+      source,
+      candidatePath,
+    );
 
     if (
       typeof value === "string" &&
@@ -98,7 +105,10 @@ function getFirstJsonRecord(
   candidatePaths: readonly (readonly string[])[],
 ): Prisma.InputJsonObject | undefined {
   for (const candidatePath of candidatePaths) {
-    const value = getNestedValue(source, candidatePath);
+    const value = getNestedValue(
+      source,
+      candidatePath,
+    );
 
     if (isJsonRecord(value)) {
       return value as Prisma.InputJsonObject;
@@ -108,7 +118,9 @@ function getFirstJsonRecord(
   return undefined;
 }
 
-function extractFirstMessage(value: unknown): string | undefined {
+function extractFirstMessage(
+  value: unknown,
+): string | undefined {
   if (
     typeof value === "string" &&
     value.trim().length > 0
@@ -118,7 +130,8 @@ function extractFirstMessage(value: unknown): string | undefined {
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const message = extractFirstMessage(item);
+      const message =
+        extractFirstMessage(item);
 
       if (message) {
         return message;
@@ -144,7 +157,8 @@ function extractFirstMessage(value: unknown): string | undefined {
   ] as const;
 
   for (const key of preferredKeys) {
-    const message = extractFirstMessage(value[key]);
+    const message =
+      extractFirstMessage(value[key]);
 
     if (message) {
       return message;
@@ -156,7 +170,8 @@ function extractFirstMessage(value: unknown): string | undefined {
 
 function getStaleAnalysisCutoff() {
   return new Date(
-    Date.now() - ANALYSIS_STALE_AFTER_MS,
+    Date.now() -
+      ANALYSIS_STALE_AFTER_MS,
   );
 }
 
@@ -167,10 +182,12 @@ async function failStaleAnalysisById(
     where: {
       id,
       status: "PROCESSING",
+
       updatedAt: {
         lte: getStaleAnalysisCutoff(),
       },
     },
+
     data: {
       status: "FAILED",
       failureReason:
@@ -183,10 +200,12 @@ async function failAllStaleAnalyses(): Promise<void> {
   await prisma.analysis.updateMany({
     where: {
       status: "PROCESSING",
+
       updatedAt: {
         lte: getStaleAnalysisCutoff(),
       },
     },
+
     data: {
       status: "FAILED",
       failureReason:
@@ -200,16 +219,22 @@ export async function createAnalysis(
 ) {
   return prisma.analysis.create({
     data: {
-      originalFilename: input.originalFilename,
-      storedFilename: input.storedFilename,
+      userId: input.userId,
+      originalFilename:
+        input.originalFilename,
+      storedFilename:
+        input.storedFilename,
       mimeType: input.mimeType,
-      fileSizeBytes: input.fileSizeBytes,
+      fileSizeBytes:
+        input.fileSizeBytes,
       status: "PROCESSING",
     },
   });
 }
 
-export async function getAnalysisById(id: string) {
+export async function getAnalysisById(
+  id: string,
+) {
   await failStaleAnalysisById(id);
 
   return prisma.analysis.findUnique({
@@ -219,10 +244,30 @@ export async function getAnalysisById(id: string) {
   });
 }
 
-export async function getAnalyses() {
+export async function getAnalysisByIdForUser(
+  id: string,
+  userId: string,
+) {
+  await failStaleAnalysisById(id);
+
+  return prisma.analysis.findFirst({
+    where: {
+      id,
+      userId,
+    },
+  });
+}
+
+export async function getAnalysesForUser(
+  userId: string,
+) {
   await failAllStaleAnalyses();
 
   return prisma.analysis.findMany({
+    where: {
+      userId,
+    },
+
     orderBy: {
       createdAt: "desc",
     },
@@ -251,7 +296,11 @@ export async function completeAnalysis(
       ],
       ["summary", "tempoRatio"],
       ["metrics", "tempo", "ratio"],
-      ["metrics", "tempo", "tempoRatio"],
+      [
+        "metrics",
+        "tempo",
+        "tempoRatio",
+      ],
     ],
   );
 
@@ -269,7 +318,11 @@ export async function completeAnalysis(
         "measurements",
         "backswingDurationSeconds",
       ],
-      ["metrics", "tempo", "backswingSeconds"],
+      [
+        "metrics",
+        "tempo",
+        "backswingSeconds",
+      ],
     ],
   );
 
@@ -287,25 +340,45 @@ export async function completeAnalysis(
         "measurements",
         "downswingDurationSeconds",
       ],
-      ["metrics", "tempo", "downswingSeconds"],
+      [
+        "metrics",
+        "tempo",
+        "downswingSeconds",
+      ],
     ],
   );
 
-  const consistencyScore = getFirstNumber(
-    detailedReport,
-    [
-      ["scoring", "consistencyScore"],
-      ["summary", "consistencyScore"],
-    ],
-  );
+  const consistencyScore =
+    getFirstNumber(
+      detailedReport,
+      [
+        [
+          "scoring",
+          "consistencyScore",
+        ],
+        [
+          "summary",
+          "consistencyScore",
+        ],
+      ],
+    );
 
   const primaryFinding =
     getFirstString(
       analysisPayload,
       [
-        ["findings", "overallFinding"],
-        ["coaching", "headline"],
-        ["coaching", "overview"],
+        [
+          "findings",
+          "overallFinding",
+        ],
+        [
+          "coaching",
+          "headline",
+        ],
+        [
+          "coaching",
+          "overview",
+        ],
       ],
     ) ??
     extractFirstMessage(
@@ -319,7 +392,10 @@ export async function completeAnalysis(
     getFirstString(
       analysisPayload,
       [
-        ["coaching", "primaryFocus"],
+        [
+          "coaching",
+          "primaryFocus",
+        ],
         [
           "recommendations",
           "items",
@@ -341,17 +417,19 @@ export async function completeAnalysis(
       ),
     );
 
-  const phaseTimings = getFirstJsonRecord(
-    detailedReport,
-    [
-      ["phaseFrames"],
-    ],
-  );
+  const phaseTimings =
+    getFirstJsonRecord(
+      detailedReport,
+      [
+        ["phaseFrames"],
+      ],
+    );
 
   return prisma.analysis.update({
     where: {
       id,
     },
+
     data: {
       status: "COMPLETED",
       failureReason: null,
@@ -360,7 +438,8 @@ export async function completeAnalysis(
 
       ...(swingScore !== undefined
         ? {
-            swingScore: Math.round(swingScore),
+            swingScore:
+              Math.round(swingScore),
           }
         : {}),
 
@@ -384,9 +463,10 @@ export async function completeAnalysis(
 
       ...(consistencyScore !== undefined
         ? {
-            consistencyScore: Math.round(
-              consistencyScore,
-            ),
+            consistencyScore:
+              Math.round(
+                consistencyScore,
+              ),
           }
         : {}),
 
@@ -417,16 +497,20 @@ export async function failAnalysis(
 ) {
   const normalizedReason =
     reason.trim().length > 0
-      ? reason.trim().slice(0, 1000)
+      ? reason
+          .trim()
+          .slice(0, 1000)
       : "The analysis engine failed without providing an error message.";
 
   return prisma.analysis.update({
     where: {
       id,
     },
+
     data: {
       status: "FAILED",
-      failureReason: normalizedReason,
+      failureReason:
+        normalizedReason,
     },
   });
 }

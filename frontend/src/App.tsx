@@ -1,5 +1,11 @@
-import { Route, Routes } from "react-router-dom";
+import {
+  Route,
+  Routes,
+} from "react-router-dom";
 
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+import PublicOnlyRoute from "./components/auth/PublicOnlyRoute";
+import AppShell from "./components/layout/AppShell";
 import AnalysisPage from "./pages/AnalysisPage";
 import ComparePage from "./pages/ComparePage";
 import DashboardPage from "./pages/DashboardPage";
@@ -12,22 +18,97 @@ import ProcessingPage from "./pages/ProcessingPage";
 import ProfilePage from "./pages/ProfilePage";
 import RegisterPage from "./pages/RegisterPage";
 
+function renderProtectedPage(
+  page: React.ReactNode,
+) {
+  return (
+    <ProtectedRoute>
+      <AppShell>
+        {page}
+      </AppShell>
+    </ProtectedRoute>
+  );
+}
+
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route
+        path="/"
+        element={<LandingPage />}
+      />
 
-      <Route path="/dashboard" element={<DashboardPage />} />
-      <Route path="/analysis/new" element={<NewAnalysisPage />} />
-      <Route path="/analysis/processing" element={<ProcessingPage />} />
-      <Route path="/analysis/:swingId" element={<AnalysisPage />} />
-      <Route path="/history" element={<HistoryPage />} />
-      <Route path="/compare" element={<ComparePage />} />
-      <Route path="/profile" element={<ProfilePage />} />
+      <Route
+        path="/login"
+        element={
+          <PublicOnlyRoute>
+            <LoginPage />
+          </PublicOnlyRoute>
+        }
+      />
 
-      <Route path="*" element={<NotFoundPage />} />
+      <Route
+        path="/register"
+        element={
+          <PublicOnlyRoute>
+            <RegisterPage />
+          </PublicOnlyRoute>
+        }
+      />
+
+      <Route
+        path="/dashboard"
+        element={renderProtectedPage(
+          <DashboardPage />,
+        )}
+      />
+
+      <Route
+        path="/analysis/new"
+        element={renderProtectedPage(
+          <NewAnalysisPage />,
+        )}
+      />
+
+      <Route
+        path="/analysis/processing"
+        element={renderProtectedPage(
+          <ProcessingPage />,
+        )}
+      />
+
+      <Route
+        path="/analysis/:swingId"
+        element={renderProtectedPage(
+          <AnalysisPage />,
+        )}
+      />
+
+      <Route
+        path="/history"
+        element={renderProtectedPage(
+          <HistoryPage />,
+        )}
+      />
+
+      <Route
+        path="/compare"
+        element={renderProtectedPage(
+          <ComparePage />,
+        )}
+      />
+
+      <Route
+        path="/profile"
+        element={renderProtectedPage(
+          <ProfilePage />,
+        )}
+      />
+
+      <Route
+        path="*"
+        element={<NotFoundPage />}
+      />
     </Routes>
   );
 }

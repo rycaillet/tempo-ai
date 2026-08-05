@@ -14,6 +14,35 @@ enum AnalysisStatus {
   FAILED
 }
 
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  displayName  String
+  passwordHash String
+
+  sessions Session[]
+  analyses Analysis[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  expiresAt DateTime
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model Analysis {
   id               String         @id @default(cuid())
   status           AnalysisStatus @default(UPLOADING)
@@ -35,9 +64,13 @@ model Analysis {
   analysisPayload Json?
   analysisReport  Json?
 
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([userId])
   @@index([status])
   @@index([createdAt])
 }

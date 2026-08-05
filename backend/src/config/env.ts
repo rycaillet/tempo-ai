@@ -10,7 +10,10 @@ const envSchema = z.object({
 
   PORT: z.coerce.number().int().positive().default(5001),
 
-  CLIENT_URL: z.string().url().default("http://localhost:5173"),
+  CLIENT_URL: z
+    .string()
+    .url()
+    .default("http://localhost:5173"),
 
   ANALYSIS_ENGINE_PATH: z
     .string()
@@ -29,6 +32,22 @@ const envSchema = z.object({
       "ANALYSIS_API_VERSION must use semantic version format.",
     )
     .default("1.0.0"),
+
+  SESSION_COOKIE_NAME: z
+    .string()
+    .min(1)
+    .default("tempo_ai_session"),
+
+  SESSION_TTL_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(30)
+    .default(7),
+
+  SESSION_COOKIE_SAME_SITE: z
+    .enum(["lax", "strict", "none"])
+    .default("lax"),
 });
 
 const result = envSchema.safeParse(process.env);
@@ -39,7 +58,9 @@ if (!result.success) {
     result.error.flatten().fieldErrors,
   );
 
-  throw new Error("Environment validation failed.");
+  throw new Error(
+    "Environment validation failed.",
+  );
 }
 
 export const env = {
