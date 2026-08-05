@@ -10,7 +10,6 @@ services:
 
     healthCheckPath: /api/health
     preDeployCommand: cd /app/backend && npx prisma migrate deploy
-    maxShutdownDelaySeconds: 60
 
     disk:
       name: tempo-ai-uploads
