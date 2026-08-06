@@ -28,6 +28,8 @@ ROTATIONS = (
     "rotate180",
 )
 
+ORIENTATION_SCORE_TIE_TOLERANCE = 0.01
+
 
 class VideoMetadata(TypedDict):
     frameCount: int
@@ -236,6 +238,46 @@ def calculate_average_visibility(
     )
 
 
+def select_orientation_candidate(
+    candidates: list[OrientationCandidate],
+) -> OrientationCandidate:
+    if not candidates:
+        raise RuntimeError(
+            "Unable to select a video orientation "
+            "without candidate results."
+        )
+
+    best_candidate = max(
+        candidates,
+        key=lambda candidate: (
+            candidate["score"],
+            candidate["framesDetected"],
+        ),
+    )
+
+    unrotated_candidate = next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate["rotation"] == "none"
+        ),
+        None,
+    )
+
+    if (
+        unrotated_candidate is not None
+        and unrotated_candidate["framesDetected"] > 0
+        and (
+            best_candidate["score"]
+            - unrotated_candidate["score"]
+        )
+        <= ORIENTATION_SCORE_TIE_TOLERANCE
+    ):
+        return unrotated_candidate
+
+    return best_candidate
+
+
 def detect_best_rotation(
     video_path: Path,
     frame_count: int,
@@ -373,12 +415,8 @@ def detect_best_rotation(
             "Unable to test video orientation."
         )
 
-    best_candidate = max(
-        candidate_results,
-        key=lambda candidate: (
-            candidate["score"],
-            candidate["framesDetected"],
-        ),
+    best_candidate = select_orientation_candidate(
+        candidate_results
     )
 
     if best_candidate["framesDetected"] == 0:

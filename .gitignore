@@ -67,3 +67,5 @@ tmp/
 *.swo
 .cache/analysis-engine/output/*-club-detection-frames/
 analysis-engine/output/*-club-presentation-frames/
+
+analysis-engine/output/*-club-detection-frames/
