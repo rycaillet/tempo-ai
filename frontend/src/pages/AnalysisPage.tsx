@@ -579,7 +579,7 @@ function AnalysisPage() {
                       <div className="flex h-full w-full items-center justify-center overflow-hidden bg-black">
                         <img
                             alt={`${selectedPhase.label} club detection visualization`}
-                            className="max-h-full max-w-full -rotate-90 object-contain"
+                            className="max-h-full max-w-full object-contain"
                             src={selectedClubVisualization.imageUrl}
                         />
                       </div>
