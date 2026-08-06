@@ -38,6 +38,52 @@ type PipelineExecutionResult = {
   stderr: string;
 };
 
+class AnalysisPipelineError extends Error {
+  readonly diagnostics: string;
+
+  constructor({
+    message,
+    diagnostics,
+  }: {
+    message: string;
+    diagnostics: string;
+  }) {
+    super(message);
+    this.name = "AnalysisPipelineError";
+    this.diagnostics = diagnostics;
+  }
+}
+
+function getUserFacingFailureMessage(
+  error: unknown,
+): string {
+  if (error instanceof AnalysisPipelineError) {
+    return error.message;
+  }
+
+  if (!(error instanceof Error)) {
+    return "TempoAI could not complete this swing analysis. Please try uploading the video again.";
+  }
+
+  if (
+    error.message.includes(
+      "processing timeout",
+    )
+  ) {
+    return "This swing analysis took longer than expected and could not be completed. Please try again.";
+  }
+
+  if (
+    error.message.startsWith(
+      "Unable to start the analysis engine",
+    )
+  ) {
+    return "The analysis service is temporarily unavailable. Please try again shortly.";
+  }
+
+  return "TempoAI could not complete this swing analysis. Please verify that the video clearly shows one complete golf swing and try again.";
+}
+
 export type ParsedPipelineResult = {
   analysis: Prisma.InputJsonObject;
   report: Prisma.InputJsonObject;
@@ -196,10 +242,8 @@ function runAnalysisPipeline(
         clearTimeout(timeout);
 
         if (exitCode !== 0) {
-          const failureDetails =
-            stderr.trim() ||
-            stdout.trim() ||
-            `Process exited with code ${String(
+          const processSummary =
+            `Analysis engine exited with code ${String(
               exitCode,
             )}${
               signal
@@ -207,10 +251,28 @@ function runAnalysisPipeline(
                 : ""
             }.`;
 
+          const diagnosticSections = [
+            processSummary,
+            stderr.trim().length > 0
+              ? `stderr:\n${stderr.trim()}`
+              : null,
+            stdout.trim().length > 0
+              ? `stdout:\n${stdout.trim()}`
+              : null,
+          ].filter(
+            (section): section is string =>
+              section !== null,
+          );
+
           reject(
-            new Error(
-              `The analysis engine failed: ${failureDetails}`,
-            ),
+            new AnalysisPipelineError({
+              message:
+                "TempoAI could not complete this swing analysis. Please verify that the video clearly shows one complete golf swing and try again.",
+              diagnostics:
+                diagnosticSections.join(
+                  "\n\n",
+                ),
+            }),
           );
 
           return;
@@ -735,20 +797,29 @@ export function startAnalysisProcessing(
     analysisId,
   ).catch(
     async (error: unknown) => {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "An unknown analysis-processing error occurred.";
+      const userFacingMessage =
+        getUserFacingFailureMessage(
+          error,
+        );
 
       console.error(
         `Failed to process analysis ${analysisId}:`,
         error,
       );
 
+      if (
+        error instanceof
+        AnalysisPipelineError
+      ) {
+        console.error(
+          `Analysis engine diagnostics for ${analysisId}:\n${error.diagnostics}`,
+        );
+      }
+
       try {
         await failAnalysis(
           analysisId,
-          message,
+          userFacingMessage,
         );
       } catch (databaseError) {
         console.error(
