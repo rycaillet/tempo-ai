@@ -81,10 +81,23 @@ app.use(
     analysisUploadsDirectory,
     {
       fallthrough: false,
-      maxAge:
-        env.NODE_ENV === "production"
-          ? "1d"
-          : 0,
+      maxAge: 0,
+      setHeaders: (response) => {
+        response.setHeader(
+          "Cache-Control",
+          "private, no-store, max-age=0",
+        );
+
+        response.setHeader(
+          "CDN-Cache-Control",
+          "no-store",
+        );
+
+        response.setHeader(
+          "Vercel-CDN-Cache-Control",
+          "no-store",
+        );
+      },
     },
   ),
 );
