@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useState,
 } from "react";
 import {
@@ -24,30 +23,42 @@ import { getAnalysisRecord } from "../services/analysisService";
 
 const pollingIntervalMs = 1000;
 
-const processingSequence = [
+const processingSequence: ProcessingStep[] = [
   {
-    id: "upload",
+    id: "video",
     title: "Preparing your video",
     description:
-      "Checking the recording and preparing frames for analysis.",
+      "Reading the recording and preparing video frames for computer-vision analysis.",
   },
   {
     id: "landmarks",
     title: "Detecting body landmarks",
     description:
-      "Tracking your shoulders, hips, knees, hands, and other key positions.",
+      "Tracking shoulders, hips, knees, hands, and other key body positions throughout the swing.",
+  },
+  {
+    id: "phases",
+    title: "Identifying swing phases",
+    description:
+      "Locating address, takeaway, top, downswing, impact, and finish reference points.",
   },
   {
     id: "mechanics",
     title: "Measuring swing mechanics",
     description:
-      "Evaluating posture, tempo, rotation, balance, and movement patterns.",
+      "Evaluating tempo, posture, rotation, weight shift, stability, and impact mechanics.",
   },
   {
-    id: "feedback",
-    title: "Generating coaching feedback",
+    id: "club",
+    title: "Analyzing club geometry",
     description:
-      "Turning your swing data into focused observations and practice drills.",
+      "Detecting and tracking the shaft to support club-based measurements when reliable geometry is available.",
+  },
+  {
+    id: "report",
+    title: "Building your coaching report",
+    description:
+      "Combining measured observations, scoring, findings, and practice recommendations into your final report.",
   },
 ];
 
@@ -56,13 +67,14 @@ function ProcessingPage() {
   const [searchParams] = useSearchParams();
 
   const analysisId = searchParams.get("analysisId");
+
   const missingAnalysisIdError = analysisId
     ? ""
     : "No analysis ID was provided.";
 
-  const [activeStep, setActiveStep] = useState(0);
   const [error, setError] = useState("");
-  const [isComplete, setIsComplete] = useState(false);
+  const [isComplete, setIsComplete] =
+    useState(false);
 
   useEffect(() => {
     if (!analysisId) {
@@ -76,23 +88,29 @@ function ProcessingPage() {
 
     async function pollAnalysis() {
       try {
-        const analysis = await getAnalysisRecord(
-          currentAnalysisId,
-        );
+        const analysis =
+          await getAnalysisRecord(
+            currentAnalysisId,
+          );
 
         if (isCancelled) {
           return;
         }
 
         if (analysis.status === "COMPLETED") {
-          setActiveStep(processingSequence.length);
           setIsComplete(true);
 
-          timeoutId = window.setTimeout(() => {
-            navigate(`/analysis/${analysis.id}`, {
-              replace: true,
-            });
-          }, 700);
+          timeoutId = window.setTimeout(
+            () => {
+              navigate(
+                `/analysis/${analysis.id}`,
+                {
+                  replace: true,
+                },
+              );
+            },
+            700,
+          );
 
           return;
         }
@@ -102,15 +120,9 @@ function ProcessingPage() {
             analysis.failureReason ??
               "TempoAI could not complete this analysis.",
           );
+
           return;
         }
-
-        setActiveStep((currentStep) =>
-          Math.min(
-            currentStep + 1,
-            processingSequence.length - 1,
-          ),
-        );
 
         timeoutId = window.setTimeout(
           pollAnalysis,
@@ -141,34 +153,8 @@ function ProcessingPage() {
     };
   }, [analysisId, navigate]);
 
-  const displayedError = missingAnalysisIdError || error;
-
-  const steps = useMemo<ProcessingStep[]>(
-    () =>
-      processingSequence.map((step, index) => ({
-        ...step,
-        status:
-          index < activeStep
-            ? "complete"
-            : index === activeStep && !isComplete
-              ? "active"
-              : isComplete
-                ? "complete"
-                : "pending",
-      })),
-    [activeStep, isComplete],
-  );
-
-  const progress = isComplete
-    ? 100
-    : Math.min(
-        95,
-        Math.round(
-          ((activeStep + 1) /
-            processingSequence.length) *
-            100,
-        ),
-      );
+  const displayedError =
+    missingAnalysisIdError || error;
 
   return (
     <main className="min-h-screen bg-canvas text-copy">
@@ -193,7 +179,7 @@ function ProcessingPage() {
                 ? "Analysis interrupted"
                 : isComplete
                   ? "Analysis complete"
-                  : "TempoAI is working"}
+                  : "Computer vision processing"}
             </p>
 
             <h1 className="mt-4 font-display text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl">
@@ -209,7 +195,7 @@ function ProcessingPage() {
                 ? displayedError
                 : isComplete
                   ? "Opening your swing report now."
-                  : "TempoAI is processing your recording and building a structured performance report."}
+                  : "TempoAI is running computer-vision analysis across your recording. Full analysis can take several minutes depending on video length and processing hardware."}
             </p>
           </div>
 
@@ -218,36 +204,72 @@ function ProcessingPage() {
             padding="lg"
             variant="raised"
           >
-            <div className="mb-8">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-white">
-                  Analysis progress
-                </span>
+            {!displayedError && !isComplete && (
+              <div className="mb-8 rounded-2xl border border-ice/15 bg-ice/[0.04] px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="relative flex size-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-soft opacity-40" />
+                    <span className="relative inline-flex size-3 rounded-full bg-lime-soft" />
+                  </span>
 
-                <span className="font-semibold text-lime-soft">
-                  {displayedError
-                    ? "Stopped"
-                    : `${progress}%`}
-                </span>
-              </div>
+                  <p className="font-semibold text-white">
+                    Analysis in progress
+                  </p>
+                </div>
 
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
-                <div
-                  className="h-full rounded-full bg-lime-soft shadow-lime transition-all duration-700"
-                  style={{
-                    width: `${progress}%`,
-                  }}
-                />
+                <p className="mt-2 text-sm leading-6 text-copy-muted">
+                  TempoAI processes the complete
+                  recording before generating the final
+                  coaching report.
+                </p>
               </div>
+            )}
+
+            {isComplete && !displayedError && (
+              <div className="mb-8 rounded-2xl border border-lime-soft/20 bg-lime-soft/[0.05] px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <Sparkles
+                    className="text-lime-soft"
+                    size={19}
+                  />
+
+                  <p className="font-semibold text-white">
+                    Analysis complete
+                  </p>
+                </div>
+
+                <p className="mt-2 text-sm leading-6 text-copy-muted">
+                  Your measurements and coaching report
+                  are ready.
+                </p>
+              </div>
+            )}
+
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copy-subtle">
+                Analysis pipeline
+              </p>
+
+              <p className="mt-2 text-sm leading-6 text-copy-muted">
+                TempoAI runs these processing stages
+                across your uploaded swing.
+              </p>
             </div>
 
-            <ProcessingSteps steps={steps} />
+            <div className="mt-6">
+              <ProcessingSteps
+                steps={processingSequence}
+                isComplete={isComplete}
+              />
+            </div>
 
             {displayedError && (
               <div className="mt-8 border-t border-white/10 pt-8">
                 <Button
                   className="w-full"
-                  onClick={() => navigate("/analysis/new")}
+                  onClick={() =>
+                    navigate("/analysis/new")
+                  }
                   size="lg"
                 >
                   Return to upload
@@ -256,11 +278,15 @@ function ProcessingPage() {
             )}
           </Panel>
 
-          <p className="mt-6 text-center text-sm text-copy-subtle">
-            {analysisId
-              ? `Analysis ID: ${analysisId}`
-              : "Keep this page open while TempoAI processes your recording."}
-          </p>
+          {!displayedError && !isComplete && (
+            <p className="mx-auto mt-6 max-w-xl text-center text-sm leading-6 text-copy-subtle">
+              Full analysis can take several minutes.
+              TempoAI is processing real video,
+              pose, motion, geometry, and club
+              detection data rather than displaying
+              estimated progress.
+            </p>
+          )}
         </Container>
       </Section>
     </main>

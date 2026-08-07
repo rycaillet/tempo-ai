@@ -942,14 +942,26 @@ function AnalysisPage() {
                       </p>
 
                       <p className="mt-4 font-display text-4xl font-semibold tracking-[-0.05em] text-white">
-                        {formatDegrees(
-                          clubAnalysis.swingPlane
-                            .topToImpactDegrees,
-                        )}
+                        {clubAnalysis.swingPlane
+                          .topToImpactDegrees !== null
+                          ? formatDegrees(
+                              clubAnalysis.swingPlane
+                                .topToImpactDegrees,
+                            )
+                          : clubAnalysis.swingPlane
+                              .available
+                            ? "Partial trajectory"
+                            : "Unavailable"}
                       </p>
 
                       <p className="mt-2 text-sm text-ice">
-                        Top-to-impact angle change
+                        {clubAnalysis.swingPlane
+                          .topToImpactDegrees !== null
+                          ? "Top-to-impact angle change"
+                          : clubAnalysis.swingPlane
+                              .available
+                            ? "Available swing phases measured"
+                            : "Insufficient club geometry"}
                       </p>
                     </div>
 
@@ -959,6 +971,19 @@ function AnalysisPage() {
                   </div>
 
                   <dl className="mt-7 space-y-4 border-t border-white/10 pt-6">
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-copy-subtle">
+                        Phase coverage
+                      </dt>
+
+                      <dd className="text-sm font-semibold text-white">
+                        {formatPercentage(
+                          clubAnalysis.swingPlane
+                            .measurementCompleteness,
+                        )}
+                      </dd>
+                    </div>
+
                     <div className="flex items-center justify-between gap-4">
                       <dt className="text-sm text-copy-subtle">
                         Confidence

@@ -12,7 +12,7 @@ function NewAnalysisPage() {
           <PageHeader
             eyebrow="New Analysis"
             title="Upload your golf swing"
-            description="Record one swing, upload your video, and receive AI-powered coaching feedback in seconds."
+            description="Record one swing, upload your video, and receive a detailed computer-vision analysis with AI-powered coaching feedback."
           />
 
           <div className="mt-14 grid gap-10 lg:grid-cols-[1.4fr_0.6fr]">
