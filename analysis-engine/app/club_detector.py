@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 from pathlib import Path
 from typing import Any, Mapping, NotRequired, Sequence, TypedDict
 
@@ -91,6 +92,15 @@ MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES = 65.0
 MAXIMUM_TEMPORAL_DISTAL_SHIFT_RATIO = 0.30
 MINIMUM_TEMPORAL_SELECTION_SCORE = 0.48
 
+MINIMUM_IMAGE_RESCUE_SCORE = 0.40
+MINIMUM_IMAGE_RESCUE_ENDPOINT_PROXIMITY_SCORE = 0.30
+MINIMUM_IMAGE_RESCUE_SEGMENT_PROXIMITY_SCORE = 0.60
+
+SHORT_FALLBACK_FRAGMENT_MAXIMUM_LENGTH_RATIO = 0.05
+SHORT_FALLBACK_FRAGMENT_MINIMUM_SCORE = 0.58
+SHORT_FALLBACK_FRAGMENT_MINIMUM_ENDPOINT_SCORE = 0.65
+SHORT_FALLBACK_FRAGMENT_MINIMUM_SEGMENT_SCORE = 0.80
+
 TEMPORAL_IMAGE_SCORE_WEIGHT = 0.55
 TEMPORAL_ANGLE_SCORE_WEIGHT = 0.30
 TEMPORAL_DISTAL_SCORE_WEIGHT = 0.15
@@ -140,6 +150,9 @@ class ShaftCandidate(TypedDict):
     nearestEndpointDistancePixels: float
     nearestEndpointDistanceRatio: float
     lengthRatio: float
+    endpointProximityScore: float
+    segmentProximityScore: float
+    lengthScore: float
     baseImageScore: float
     score: float
     provenance: CandidateProvenance
@@ -148,6 +161,12 @@ class ShaftCandidate(TypedDict):
 class CandidateEvaluationDiagnostics(TypedDict):
     index: int
     line: ShaftLine
+    handDistanceRatio: float
+    nearestEndpointDistanceRatio: float
+    lengthRatio: float
+    endpointProximityScore: float
+    segmentProximityScore: float
+    lengthScore: float
     imageScore: float
     adjustedImageScore: float
     provenance: CandidateProvenance
@@ -874,6 +893,18 @@ def evaluate_shaft_candidate(
             length_ratio,
             6,
         ),
+        "endpointProximityScore": round(
+            endpoint_proximity_score,
+            6,
+        ),
+        "segmentProximityScore": round(
+            segment_proximity_score,
+            6,
+        ),
+        "lengthScore": round(
+            length_score,
+            6,
+        ),
         "baseImageScore": round(
             base_score,
             6,
@@ -942,6 +973,31 @@ def sort_shaft_candidates(
             candidate["line"]["lengthPixels"],
         ),
         reverse=True,
+    )
+
+
+def is_trustworthy_short_fallback_fragment(
+    candidate: ShaftCandidate,
+) -> bool:
+    provenance = candidate["provenance"]
+
+    is_short_fallback_fragment = (
+        provenance["houghPass"] == "fallback"
+        and provenance["segmentSource"] == "single"
+        and candidate["lengthRatio"]
+        <= SHORT_FALLBACK_FRAGMENT_MAXIMUM_LENGTH_RATIO
+    )
+
+    if not is_short_fallback_fragment:
+        return True
+
+    return (
+        candidate["score"]
+        >= SHORT_FALLBACK_FRAGMENT_MINIMUM_SCORE
+        and candidate["endpointProximityScore"]
+        >= SHORT_FALLBACK_FRAGMENT_MINIMUM_ENDPOINT_SCORE
+        and candidate["segmentProximityScore"]
+        >= SHORT_FALLBACK_FRAGMENT_MINIMUM_SEGMENT_SCORE
     )
 
 
@@ -2335,6 +2391,22 @@ def build_candidate_evaluation_diagnostics(
     return {
         "index": index,
         "line": candidate["line"],
+        "handDistanceRatio": (
+            candidate["handDistanceRatio"]
+        ),
+        "nearestEndpointDistanceRatio": (
+            candidate[
+                "nearestEndpointDistanceRatio"
+            ]
+        ),
+        "lengthRatio": candidate["lengthRatio"],
+        "endpointProximityScore": (
+            candidate["endpointProximityScore"]
+        ),
+        "segmentProximityScore": (
+            candidate["segmentProximityScore"]
+        ),
+        "lengthScore": candidate["lengthScore"],
         "imageScore": candidate["baseImageScore"],
         "adjustedImageScore": candidate["score"],
         "provenance": candidate["provenance"],
@@ -2401,6 +2473,14 @@ def select_shaft_candidate(
         "temporalReferenceAvailable"
     ] = True
 
+    trustworthy_candidates = [
+        candidate
+        for candidate in candidates
+        if is_trustworthy_short_fallback_fragment(
+            candidate
+        )
+    ]
+
     evaluations = [
         calculate_temporal_candidate_evaluation(
             candidate,
@@ -2416,12 +2496,35 @@ def select_shaft_candidate(
             frame_width=frame_width,
             frame_height=frame_height,
         )
-        for candidate in candidates
+        for candidate in trustworthy_candidates
     ]
 
     diagnostics[
         "temporalCandidatesEvaluated"
     ] = len(evaluations)
+
+    if not evaluations:
+        diagnostics[
+            "temporalCandidatesRejected"
+        ] = len(candidates)
+        diagnostics[
+            "temporalSelectionMode"
+        ] = "rejected_short_fallback_fragment"
+
+        diagnostics["candidateEvaluations"] = [
+            build_candidate_evaluation_diagnostics(
+                candidate,
+                index=index,
+                temporal_score=None,
+                angle_change_degrees=None,
+                distal_shift_ratio=None,
+                accepted=False,
+                selected=False,
+            )
+            for index, candidate in enumerate(candidates)
+        ]
+
+        return None
 
     accepted_evaluations = [
         evaluation
@@ -2437,6 +2540,83 @@ def select_shaft_candidate(
     )
 
     if not accepted_evaluations:
+        rescue_evaluations = [
+            evaluation
+            for evaluation in evaluations
+            if (
+                evaluation["candidate"]["provenance"][
+                    "searchRegion"
+                ] == "corridor"
+                and evaluation["candidate"]["score"]
+                >= MINIMUM_IMAGE_RESCUE_SCORE
+                and evaluation["candidate"][
+                    "endpointProximityScore"
+                ]
+                >= MINIMUM_IMAGE_RESCUE_ENDPOINT_PROXIMITY_SCORE
+                and evaluation["candidate"][
+                    "segmentProximityScore"
+                ]
+                >= MINIMUM_IMAGE_RESCUE_SEGMENT_PROXIMITY_SCORE
+            )
+        ]
+
+        if rescue_evaluations:
+            rescue_evaluations.sort(
+                key=lambda evaluation: (
+                    evaluation["candidate"]["score"],
+                    evaluation["candidate"][
+                        "endpointProximityScore"
+                    ],
+                    evaluation["candidate"][
+                        "segmentProximityScore"
+                    ],
+                    evaluation["candidate"]["line"][
+                        "lengthPixels"
+                    ],
+                ),
+                reverse=True,
+            )
+
+            selected_evaluation = rescue_evaluations[0]
+            selected_candidate = selected_evaluation["candidate"]
+
+            diagnostics[
+                "temporalSelectionMode"
+            ] = "image_rescue"
+            diagnostics[
+                "selectedTemporalScore"
+            ] = selected_evaluation["temporalScore"]
+            diagnostics[
+                "selectedAngleChangeDegrees"
+            ] = selected_evaluation["angleChangeDegrees"]
+            diagnostics[
+                "selectedDistalShiftRatio"
+            ] = selected_evaluation["distalShiftRatio"]
+
+            diagnostics["candidateEvaluations"] = [
+                build_candidate_evaluation_diagnostics(
+                    evaluation["candidate"],
+                    index=index,
+                    temporal_score=(
+                        evaluation["temporalScore"]
+                    ),
+                    angle_change_degrees=(
+                        evaluation["angleChangeDegrees"]
+                    ),
+                    distal_shift_ratio=(
+                        evaluation["distalShiftRatio"]
+                    ),
+                    accepted=evaluation["accepted"],
+                    selected=(
+                        evaluation["candidate"]
+                        is selected_candidate
+                    ),
+                )
+                for index, evaluation in enumerate(evaluations)
+            ]
+
+            return selected_candidate
+
         diagnostics[
             "temporalSelectionMode"
         ] = "rejected"
@@ -2929,16 +3109,25 @@ def analyze_club_detection(
         )
     )
 
-    resolved_visualization_directory = (
-        resolved_visualization_directory
+    resolved_presentation_directory = (
+        create_club_presentation_directory(
+            refined_phases_path
+        )
         .expanduser()
         .resolve()
     )
 
-    resolved_visualization_directory.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    for generated_directory in (
+        resolved_visualization_directory,
+        resolved_presentation_directory,
+    ):
+        if generated_directory.exists():
+            shutil.rmtree(generated_directory)
+
+        generated_directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
     resolved_presentation_directory = (
         create_club_presentation_directory(

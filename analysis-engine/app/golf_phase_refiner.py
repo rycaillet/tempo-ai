@@ -28,6 +28,8 @@ ADDRESS_MAXIMUM_WRIST_SEPARATION = 0.45
 
 ADDRESS_MINIMUM_WRIST_HEIGHT = -0.20
 ADDRESS_MAXIMUM_WRIST_HEIGHT = 0.40
+ADDRESS_MINIMUM_WRIST_HEIGHT_FROM_HIPS = -0.20
+ADDRESS_MAXIMUM_WRIST_HEIGHT_FROM_HIPS = 0.60
 
 ADDRESS_MAXIMUM_LOCAL_MOTION = 0.12
 
@@ -592,6 +594,9 @@ def find_address_reference(
         wrist_height = features[
             "wristHeightFromShouldersNormalized"
         ]
+        wrist_height_from_hips = features[
+            "wristHeightFromHipsNormalized"
+        ]
 
         wrist_separation_values.append(
             wrist_separation
@@ -606,9 +611,13 @@ def find_address_reference(
         plausible_posture = (
             wrist_separation
             <= ADDRESS_MAXIMUM_WRIST_SEPARATION
-            and ADDRESS_MINIMUM_WRIST_HEIGHT
-            <= wrist_height
-            <= ADDRESS_MAXIMUM_WRIST_HEIGHT
+            and wrist_height
+            >= ADDRESS_MINIMUM_WRIST_HEIGHT
+            and (
+                ADDRESS_MINIMUM_WRIST_HEIGHT_FROM_HIPS
+                <= wrist_height_from_hips
+                <= ADDRESS_MAXIMUM_WRIST_HEIGHT_FROM_HIPS
+            )
         )
 
         stable_enough = (
@@ -1071,30 +1080,31 @@ def validate_top_reference(
     pose_frames: list[PoseFrame],
     motion_frames: list[MotionFrame],
     top_candidate: dict[str, Any],
+    estimated_fps: float,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    frame_index = int(
+    original_frame_index = int(
         top_candidate["frameIndex"]
     )
 
-    pose_frame = next(
-        (
-            frame
-            for frame in pose_frames
-            if frame["frameIndex"] == frame_index
-        ),
-        None,
+    pose_by_frame = {
+        frame["frameIndex"]: frame
+        for frame in pose_frames
+    }
+
+    motion_index_by_frame = {
+        frame["frameIndex"]: index
+        for index, frame in enumerate(
+            motion_frames
+        )
+    }
+
+    original_motion_index = (
+        motion_index_by_frame.get(
+            original_frame_index
+        )
     )
 
-    motion_frame = next(
-        (
-            frame
-            for frame in motion_frames
-            if frame["frameIndex"] == frame_index
-        ),
-        None,
-    )
-
-    if pose_frame is None or motion_frame is None:
+    if original_motion_index is None:
         return top_candidate, {
             "validated": False,
             "reason": (
@@ -1102,82 +1112,343 @@ def validate_top_reference(
             ),
         }
 
-    features = calculate_body_features(pose_frame)
+    search_radius = max(
+        2,
+        round(estimated_fps * 0.25),
+    )
 
-    if features is None:
+    search_start = max(
+        0,
+        original_motion_index - search_radius,
+    )
+
+    search_end = min(
+        len(motion_frames) - 1,
+        original_motion_index + search_radius,
+    )
+
+    local_motion_values = [
+        motion_frames[index]["smoothedMotion"]
+        for index in range(
+            search_start,
+            search_end + 1,
+        )
+    ]
+
+    maximum_local_motion = max(
+        local_motion_values,
+        default=0.0,
+    )
+
+    evaluated_candidates: list[
+        dict[str, Any]
+    ] = []
+
+    for motion_index in range(
+        search_start,
+        search_end + 1,
+    ):
+        motion_frame = motion_frames[
+            motion_index
+        ]
+
+        pose_frame = pose_by_frame.get(
+            motion_frame["frameIndex"]
+        )
+
+        if pose_frame is None:
+            continue
+
+        features = calculate_body_features(
+            pose_frame,
+            allow_single_wrist_fallback=True,
+        )
+
+        if features is None:
+            continue
+
+        wrist_height = features[
+            "wristHeightFromShouldersNormalized"
+        ]
+
+        wrist_separation = features[
+            "wristSeparationNormalized"
+        ]
+
+        hand_height_score = clamp(
+            (
+                TOP_HAND_HEIGHT_MARGIN
+                - wrist_height
+            )
+            / 0.60
+        )
+
+        wrist_separation_score = (
+            1.0
+            - clamp(
+                wrist_separation
+                / TOP_MAXIMUM_WRIST_SEPARATION
+            )
+        )
+
+        motion_score = (
+            1.0
+            - clamp(
+                motion_frame["smoothedMotion"]
+                / max(
+                    maximum_local_motion,
+                    0.000001,
+                )
+            )
+        )
+
+        visibility_score = clamp(
+            (
+                features["minimumVisibility"]
+                - MINIMUM_VISIBILITY
+            )
+            / (
+                1.0
+                - MINIMUM_VISIBILITY
+            )
+        )
+
+        candidate_distance = abs(
+            motion_index
+            - original_motion_index
+        )
+
+        proximity_score = (
+            1.0
+            - clamp(
+                candidate_distance
+                / max(search_radius, 1)
+            )
+        )
+
+        selection_score = (
+            0.35 * hand_height_score
+            + 0.25 * wrist_separation_score
+            + 0.25 * motion_score
+            + 0.10 * visibility_score
+            + 0.05 * proximity_score
+        )
+
+        evaluated_candidates.append({
+            "poseFrame": pose_frame,
+            "motionFrame": motion_frame,
+            "features": features,
+            "selectionScore": selection_score,
+            "handHeightScore": (
+                hand_height_score
+            ),
+            "wristSeparationScore": (
+                wrist_separation_score
+            ),
+            "motionScore": motion_score,
+            "visibilityScore": (
+                visibility_score
+            ),
+            "proximityScore": (
+                proximity_score
+            ),
+        })
+
+    if not evaluated_candidates:
         return top_candidate, {
             "validated": False,
             "reason": (
-                "Top candidate lacked reliable landmarks."
+                "No reliable top-of-backswing "
+                "frames were available near the "
+                "motion candidate."
+            ),
+            "originalFrameIndex": (
+                original_frame_index
             ),
         }
 
+    best_selection_score = max(
+        candidate["selectionScore"]
+        for candidate in evaluated_candidates
+    )
+
+    near_best_candidates = [
+        candidate
+        for candidate in evaluated_candidates
+        if candidate["selectionScore"]
+        >= best_selection_score - 0.01
+    ]
+
+    selected_candidate = max(
+        near_best_candidates,
+        key=lambda candidate: candidate[
+            "motionFrame"
+        ]["frameIndex"],
+    )
+
+    selected_pose_frame = selected_candidate[
+        "poseFrame"
+    ]
+
+    selected_motion_frame = (
+        selected_candidate["motionFrame"]
+    )
+
+    selected_features = selected_candidate[
+        "features"
+    ]
+
     hands_above_shoulders = (
-        features[
+        selected_features[
             "wristHeightFromShouldersNormalized"
         ]
         <= TOP_HAND_HEIGHT_MARGIN
     )
 
     wrists_close = (
-        features["wristSeparationNormalized"]
+        selected_features[
+            "wristSeparationNormalized"
+        ]
         <= TOP_MAXIMUM_WRIST_SEPARATION
     )
 
     low_motion = (
-        motion_frame["smoothedMotion"]
+        selected_motion_frame[
+            "smoothedMotion"
+        ]
         <= 0.02
     )
 
-    validation_score = (
-        0.40 * float(hands_above_shoulders)
-        + 0.30 * float(wrists_close)
-        + 0.30 * float(low_motion)
-    )
-
     original_confidence = float(
-        top_candidate.get("confidence", 0.5)
+        top_candidate.get(
+            "confidence",
+            0.5,
+        )
     )
 
     confidence = (
-        0.50 * original_confidence
-        + 0.50 * validation_score
+        0.40 * original_confidence
+        + 0.60
+        * selected_candidate[
+            "selectionScore"
+        ]
     )
 
-    refined_point = {
-        **top_candidate,
-        "confidence": clamp_confidence(confidence),
-        "method": (
-            "motion-minimum-with-golf-posture-validation"
+    refined_point = create_phase_point(
+        selected_pose_frame,
+        confidence,
+        (
+            "local-golf-posture-"
+            "top-refinement"
         ),
-    }
+    )
 
     diagnostics = {
         "validated": (
             hands_above_shoulders
             and wrists_close
-            and low_motion
         ),
-        "handsAboveShoulders": hands_above_shoulders,
-        "wristsClose": wrists_close,
-        "lowMotion": low_motion,
-        "wristSeparationNormalized": round_value(
-            features["wristSeparationNormalized"]
+        "originalFrameIndex": (
+            original_frame_index
         ),
-        "wristHeightFromShouldersNormalized": round_value(
-            features[
-                "wristHeightFromShouldersNormalized"
+        "selectedFrameIndex": (
+            selected_pose_frame[
+                "frameIndex"
             ]
         ),
+        "searchStartFrame": (
+            motion_frames[
+                search_start
+            ]["frameIndex"]
+        ),
+        "searchEndFrame": (
+            motion_frames[
+                search_end
+            ]["frameIndex"]
+        ),
+        "evaluatedCandidateCount": len(
+            evaluated_candidates
+        ),
+        "handsAboveShoulders": (
+            hands_above_shoulders
+        ),
+        "wristsClose": wrists_close,
+        "lowMotion": low_motion,
+        "wristSeparationNormalized": (
+            round_value(
+                selected_features[
+                    "wristSeparationNormalized"
+                ]
+            )
+        ),
+        "wristHeightFromShouldersNormalized": (
+            round_value(
+                selected_features[
+                    "wristHeightFromShouldersNormalized"
+                ]
+            )
+        ),
         "rawMotion": round_value(
-            motion_frame["rawMotion"]
+            selected_motion_frame[
+                "rawMotion"
+            ]
         ),
         "smoothedMotion": round_value(
-            motion_frame["smoothedMotion"]
+            selected_motion_frame[
+                "smoothedMotion"
+            ]
         ),
-        "validationScore": round_value(
-            validation_score
+        "selectionScore": round_value(
+            selected_candidate[
+                "selectionScore"
+            ]
         ),
+        "candidateEvaluations": [
+            {
+                "frameIndex": candidate[
+                    "poseFrame"
+                ]["frameIndex"],
+                "timestampSeconds": round_value(
+                    candidate[
+                        "poseFrame"
+                    ]["timestampSeconds"],
+                    3,
+                ),
+                "selectionScore": round_value(
+                    candidate[
+                        "selectionScore"
+                    ]
+                ),
+                "handHeightScore": round_value(
+                    candidate[
+                        "handHeightScore"
+                    ]
+                ),
+                "wristSeparationScore": (
+                    round_value(
+                        candidate[
+                            "wristSeparationScore"
+                        ]
+                    )
+                ),
+                "motionScore": round_value(
+                    candidate[
+                        "motionScore"
+                    ]
+                ),
+                "visibilityScore": round_value(
+                    candidate[
+                        "visibilityScore"
+                    ]
+                ),
+                "selected": (
+                    candidate
+                    is selected_candidate
+                ),
+            }
+            for candidate
+            in evaluated_candidates
+        ],
     }
 
     return refined_point, diagnostics
@@ -1244,6 +1515,7 @@ def refine_golf_phases(
             pose_frames,
             motion_frames,
             top_candidate,
+            estimated_fps,
         )
     )
 

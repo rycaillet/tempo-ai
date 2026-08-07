@@ -405,26 +405,150 @@ def find_phase_candidates(
 
     minimum_top_gap = max(
         1,
-        round(estimated_fps * TOP_SEARCH_MINIMUM_GAP_SECONDS),
+        round(
+            estimated_fps
+            * TOP_SEARCH_MINIMUM_GAP_SECONDS
+        ),
     )
+
     top_search_end = max(
         movement_start_index,
         impact_start_index - minimum_top_gap,
     )
+
     top_search_start = max(
         peak_search_margin,
-        top_search_end - round(estimated_fps * TOP_SEARCH_LOOKBACK_SECONDS),
+        top_search_end
+        - round(
+            estimated_fps
+            * TOP_SEARCH_LOOKBACK_SECONDS
+        ),
     )
 
     top_index: int | None = None
+
     if top_search_start <= top_search_end:
-        top_index = min(
-            range(top_search_start, top_search_end + 1),
-            key=lambda index: (
-                motion_frames[index]["smoothedMotion"],
-                -motion_frames[index]["validLandmarkCount"],
-            ),
-        )
+        best_score = float("-inf")
+
+        for index in range(
+            top_search_start,
+            top_search_end + 1,
+        ):
+            current_motion = motion_frames[index][
+                "smoothedMotion"
+            ]
+
+            next_window_end = min(
+                index + 5,
+                impact_start_index + 1,
+            )
+
+            next_window = motion_frames[
+                index + 1:next_window_end
+            ]
+
+            if len(next_window) < 3:
+                continue
+
+            increasing_frames = sum(
+                1
+                for first, second in zip(
+                    next_window,
+                    next_window[1:],
+                )
+                if (
+                    second["smoothedMotion"]
+                    >= first["smoothedMotion"]
+                )
+            )
+
+            trend_score = (
+                increasing_frames
+                / max(
+                    len(next_window) - 1,
+                    1,
+                )
+            )
+
+            low_motion_score = (
+                1.0
+                - min(
+                    1.0,
+                    current_motion
+                    / max(
+                        movement_threshold,
+                        0.000001,
+                    ),
+                )
+            )
+
+            landmark_score = (
+                motion_frames[index][
+                    "validLandmarkCount"
+                ]
+                / len(
+                    TRACKED_LANDMARK_WEIGHTS
+                )
+            )
+
+            score = (
+                0.55 * trend_score
+                + 0.30 * low_motion_score
+                + 0.15 * landmark_score
+            )
+
+            if score > best_score:
+                best_score = score
+                top_index = index
+
+        if top_index is None:
+            top_index = min(
+                range(
+                    top_search_start,
+                    top_search_end + 1,
+                ),
+                key=lambda index: (
+                    motion_frames[index][
+                        "smoothedMotion"
+                    ],
+                    -motion_frames[index][
+                        "validLandmarkCount"
+                    ],
+                ),
+            )
+
+        def top_score(
+            index: int,
+        ) -> tuple[float, float]:
+            frame = motion_frames[index]
+
+            neighborhood_start = max(
+                top_search_start,
+                index - 2,
+            )
+            neighborhood_end = min(
+                top_search_end,
+                index + 2,
+            )
+
+            neighborhood_motion = [
+                motion_frames[i]["smoothedMotion"]
+                for i in range(
+                    neighborhood_start,
+                    neighborhood_end + 1,
+                )
+            ]
+
+            average_motion = (
+                sum(neighborhood_motion)
+                / len(neighborhood_motion)
+            )
+
+            return (
+                average_motion,
+                -frame["validLandmarkCount"],
+            )
+            
 
     downswing_index: int | None = None
     if top_index is not None:

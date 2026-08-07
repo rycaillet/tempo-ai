@@ -356,6 +356,19 @@ def apply_short_gap_tracking(
         if current_frame.get("detected"):
             continue
 
+        candidate_diagnostics = current_frame.get(
+            "candidateDiagnostics"
+        )
+
+        if (
+            isinstance(candidate_diagnostics, dict)
+            and candidate_diagnostics.get(
+                "temporalSelectionMode"
+            )
+            == "rejected_short_fallback_fragment"
+        ):
+            continue
+
         previous_frame = frame_results[index - 1]
         next_frame = frame_results[index + 1]
 
