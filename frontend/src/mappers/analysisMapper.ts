@@ -1045,7 +1045,8 @@ function mapClubAnalysis(
 
   return {
     shaftLean: {
-      available: Boolean(shaftLean),
+      available:
+        shaftLean?.classification === "observed",
       angleDegrees: normalizeOptionalNumber(
         shaftLean
           ?.signedLeanFromVerticalDegrees,
@@ -1063,7 +1064,8 @@ function mapClubAnalysis(
     },
 
     swingPlane: {
-      available: Boolean(swingPlane),
+      available:
+        swingPlane?.classification === "observed",
       confidence: normalizeOptionalNumber(
         swingPlane?.confidence,
       ),
