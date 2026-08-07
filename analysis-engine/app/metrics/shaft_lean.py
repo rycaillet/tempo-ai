@@ -75,9 +75,21 @@ def get_phase_detection(
         club_detection
     )
 
-    for frame in frames:
-        if frame.get("phase") == phase_name:
+    phase_frames = [
+        frame
+        for frame in frames
+        if frame.get("phase") == phase_name
+    ]
+
+    if not phase_frames:
+        return None
+
+    for frame in phase_frames:
+        if frame.get("isReferenceFrame") is True:
             return frame
+
+    if len(phase_frames) == 1:
+        return phase_frames[0]
 
     return None
 
@@ -228,20 +240,20 @@ def calculate_signed_lean_from_vertical(
     if math.hypot(delta_x, delta_y) <= 0.0:
         return None
 
-    angle = math.degrees(
+    absolute_lean = math.degrees(
         math.atan2(
-            delta_x,
-            delta_y,
+            abs(delta_x),
+            abs(delta_y),
         )
     )
 
-    while angle <= -180.0:
-        angle += 360.0
+    if abs(delta_x) <= 0.000001:
+        return 0.0
 
-    while angle > 180.0:
-        angle -= 360.0
-
-    return angle
+    return math.copysign(
+        absolute_lean,
+        delta_x,
+    )
 
 
 def classify_camera_relative_lean(
