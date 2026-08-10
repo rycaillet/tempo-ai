@@ -33,6 +33,9 @@ from app.phase_detector import (
     save_motion_analysis,
 )
 from app.pose_detector import analyze_video_pose
+from app.video_normalizer import (
+    normalized_analysis_video,
+)
 
 
 Handedness = Literal["right", "left"]
@@ -80,205 +83,253 @@ def run_analysis_pipeline(
             f"Video file not found: {resolved_video_path}"
         )
 
-    pose_result = analyze_video_pose(
+    with normalized_analysis_video(
         resolved_video_path
-    )
+    ) as normalized_video:
+        analysis_video_path = (
+            normalized_video.analysis_path
+        )
 
-    pose_timeline_path = Path(
-        pose_result["timelinePath"]
-    ).resolve()
+        pose_result = analyze_video_pose(
+            analysis_video_path
+        )
 
-    (
-        source_video,
-        metadata,
-        orientation,
-        geometry_frames,
-    ) = load_geometry_pose_timeline(
-        pose_timeline_path
-    )
+        pose_timeline_path = Path(
+            pose_result["timelinePath"]
+        ).resolve()
 
-    geometry_analysis = analyze_geometry(
-        source_video=source_video,
-        metadata=metadata,
-        orientation=orientation,
-        frames=geometry_frames,
-    )
-
-    geometry_analysis_path = (
-        create_geometry_output_path(
+        (
+            source_video,
+            metadata,
+            orientation,
+            geometry_frames,
+        ) = load_geometry_pose_timeline(
             pose_timeline_path
         )
-    )
 
-    save_geometry_analysis(
-        geometry_analysis_path,
-        geometry_analysis,
-    )
+        geometry_analysis = analyze_geometry(
+            source_video=source_video,
+            metadata=metadata,
+            orientation=orientation,
+            frames=geometry_frames,
+        )
 
-    (
-        motion_frames,
-        active_pose_window,
-    ) = load_motion_pose_timeline(
-        pose_timeline_path
-    )
+        geometry_analysis_path = (
+            create_geometry_output_path(
+                pose_timeline_path
+            )
+        )
 
-    motion_analysis = analyze_motion_signal(
-        motion_frames,
-        active_pose_window,
-    )
+        save_geometry_analysis(
+            geometry_analysis_path,
+            geometry_analysis,
+        )
 
-    motion_analysis_path = (
-        create_motion_output_path(
+        (
+            motion_frames,
+            active_pose_window,
+        ) = load_motion_pose_timeline(
             pose_timeline_path
         )
-    )
 
-    save_motion_analysis(
-        motion_analysis_path,
-        motion_analysis,
-    )
+        motion_analysis = analyze_motion_signal(
+            motion_frames,
+            active_pose_window,
+        )
 
-    pose_payload = load_json(
-        pose_timeline_path
-    )
+        motion_analysis_path = (
+            create_motion_output_path(
+                pose_timeline_path
+            )
+        )
 
-    motion_payload = load_json(
-        motion_analysis_path
-    )
+        save_motion_analysis(
+            motion_analysis_path,
+            motion_analysis,
+        )
 
-    refined_phases = refine_golf_phases(
-        pose_payload,
-        motion_payload,
-    )
+        pose_payload = load_json(
+            pose_timeline_path
+        )
 
-    refined_phases_path = (
-        create_refined_phases_output_path(
+        motion_payload = load_json(
             motion_analysis_path
         )
-    )
 
-    write_json(
-        refined_phases_path,
-        refined_phases,
-    )
+        refined_phases = refine_golf_phases(
+            pose_payload,
+            motion_payload,
+        )
 
-    club_detection_result = (
-        analyze_club_detection(
-            video_path=resolved_video_path,
-            pose_timeline_path=(
-                pose_timeline_path
-            ),
+        refined_phases_path = (
+            create_refined_phases_output_path(
+                motion_analysis_path
+            )
+        )
+
+        write_json(
+            refined_phases_path,
+            refined_phases,
+        )
+
+        club_detection_result = (
+            analyze_club_detection(
+                video_path=analysis_video_path,
+                pose_timeline_path=(
+                    pose_timeline_path
+                ),
+                refined_phases_path=(
+                    refined_phases_path
+                ),
+            )
+        )
+
+        club_detection_path_value = (
+            club_detection_result.get(
+                "clubDetectionPath"
+            )
+        )
+
+        if not isinstance(
+            club_detection_path_value,
+            str,
+        ):
+            raise RuntimeError(
+                "Club detection did not return "
+                "an artifact output path."
+            )
+
+        club_detection_path = Path(
+            club_detection_path_value
+        ).resolve()
+
+        club_visualization_directory_value = (
+            club_detection_result.get(
+                "clubVisualizationDirectory"
+            )
+        )
+
+        if not isinstance(
+            club_visualization_directory_value,
+            str,
+        ):
+            raise RuntimeError(
+                "Club detection did not return "
+                "a visualization directory."
+            )
+
+        club_visualization_directory = Path(
+            club_visualization_directory_value
+        ).resolve()
+
+        club_detection_payload = (
+            club_detection_result.get(
+                "clubDetection"
+            )
+        )
+
+        if not isinstance(
+            club_detection_payload,
+            dict,
+        ):
+            raise RuntimeError(
+                "Club detection did not return "
+                "a result payload."
+            )
+
+        metrics_result = analyze_golf_metrics(
+            geometry_path=geometry_analysis_path,
             refined_phases_path=(
                 refined_phases_path
             ),
-        )
-    )
-
-    club_detection_path_value = (
-        club_detection_result.get(
-            "clubDetectionPath"
-        )
-    )
-
-    if not isinstance(
-        club_detection_path_value,
-        str,
-    ):
-        raise RuntimeError(
-            "Club detection did not return "
-            "an artifact output path."
+            club_detection_path=(
+                club_detection_path
+            ),
+            output_path=report_output_path,
+            handedness=handedness,
         )
 
-    club_detection_path = Path(
-        club_detection_path_value
-    ).resolve()
-
-    club_visualization_directory_value = (
-        club_detection_result.get(
-            "clubVisualizationDirectory"
-        )
-    )
-
-    if not isinstance(
-        club_visualization_directory_value,
-        str,
-    ):
-        raise RuntimeError(
-            "Club detection did not return "
-            "a visualization directory."
+        golf_metrics_path_value = (
+            metrics_result.get(
+                "golfMetricsPath"
+            )
         )
 
-    club_visualization_directory = Path(
-        club_visualization_directory_value
-    ).resolve()
+        if not isinstance(
+            golf_metrics_path_value,
+            str,
+        ):
+            raise RuntimeError(
+                "Golf metrics analysis did not return "
+                "a report output path."
+            )
 
-    club_detection_payload = (
-        club_detection_result.get(
-            "clubDetection"
-        )
-    )
+        golf_metrics_path = Path(
+            golf_metrics_path_value
+        ).resolve()
 
-    if not isinstance(
-        club_detection_payload,
-        dict,
-    ):
-        raise RuntimeError(
-            "Club detection did not return "
-            "a result payload."
-        )
-
-    metrics_result = analyze_golf_metrics(
-        geometry_path=geometry_analysis_path,
-        refined_phases_path=refined_phases_path,
-        club_detection_path=club_detection_path,
-        output_path=report_output_path,
-        handedness=handedness,
-    )
-
-    golf_metrics_path_value = metrics_result.get(
-        "golfMetricsPath"
-    )
-
-    if not isinstance(
-        golf_metrics_path_value,
-        str,
-    ):
-        raise RuntimeError(
-            "Golf metrics analysis did not return "
-            "a report output path."
-        )
-
-    golf_metrics_path = Path(
-        golf_metrics_path_value
-    ).resolve()
-
-    final_report = load_json(
-        golf_metrics_path
-    )
-
-    artifacts = {
-        "poseTimelinePath": str(
-            pose_timeline_path
-        ),
-        "motionAnalysisPath": str(
-            motion_analysis_path
-        ),
-        "geometryAnalysisPath": str(
-            geometry_analysis_path
-        ),
-        "refinedPhasesPath": str(
-            refined_phases_path
-        ),
-        "clubDetectionPath": str(
-            club_detection_path
-        ),
-        "clubVisualizationDirectory": str(
-            club_visualization_directory
-        ),
-        "golfMetricsPath": str(
+        final_report = load_json(
             golf_metrics_path
-        ),
-    }
+        )
+
+        # Internal computer-vision stages operate on the temporary
+        # canonical video, but persisted/public analysis data should
+        # continue identifying the user's original uploaded video.
+        final_report["sourceVideo"] = str(
+            resolved_video_path
+        )
+
+        write_json(
+            golf_metrics_path,
+            final_report,
+        )
+
+        artifacts = {
+            "poseTimelinePath": str(
+                pose_timeline_path
+            ),
+            "motionAnalysisPath": str(
+                motion_analysis_path
+            ),
+            "geometryAnalysisPath": str(
+                geometry_analysis_path
+            ),
+            "refinedPhasesPath": str(
+                refined_phases_path
+            ),
+            "clubDetectionPath": str(
+                club_detection_path
+            ),
+            "clubVisualizationDirectory": str(
+                club_visualization_directory
+            ),
+            "golfMetricsPath": str(
+                golf_metrics_path
+            ),
+        }
+
+        stage_summaries = {
+            "poseDetection": pose_result[
+                "poseDetection"
+            ],
+            "activePoseWindow": pose_result[
+                "activePoseWindow"
+            ],
+            "motion": motion_analysis[
+                "summary"
+            ],
+            "geometry": geometry_analysis[
+                "summary"
+            ],
+            "refinedPhases": refined_phases[
+                "summary"
+            ],
+            "clubDetection": (
+                club_detection_payload[
+                    "summary"
+                ]
+            ),
+        }
 
     duration_milliseconds = (
         perf_counter() - started_at
@@ -308,28 +359,7 @@ def run_analysis_pipeline(
         "handedness": handedness,
         "analysis": analysis_contract,
         "artifacts": artifacts,
-        "stageSummaries": {
-            "poseDetection": pose_result[
-                "poseDetection"
-            ],
-            "activePoseWindow": pose_result[
-                "activePoseWindow"
-            ],
-            "motion": motion_analysis[
-                "summary"
-            ],
-            "geometry": geometry_analysis[
-                "summary"
-            ],
-            "refinedPhases": refined_phases[
-                "summary"
-            ],
-            "clubDetection": (
-                club_detection_payload[
-                    "summary"
-                ]
-            ),
-        },
+        "stageSummaries": stage_summaries,
         "report": final_report,
     }
 

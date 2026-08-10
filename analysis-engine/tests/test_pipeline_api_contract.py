@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,6 +24,13 @@ class PipelineApiContractTests(
             video_path = root / "swing.mp4"
             video_path.write_bytes(b"video")
 
+            normalized_video_path = (
+                root / "swing-normalized.mp4"
+            )
+            normalized_video_path.write_bytes(
+                b"normalized-video"
+            )
+
             pose_path = root / "swing-pose.json"
             motion_path = root / "swing-motion.json"
             geometry_path = root / "swing-geometry.json"
@@ -36,10 +44,12 @@ class PipelineApiContractTests(
                 json.dumps({"frames": []}),
                 encoding="utf-8",
             )
+
             motion_path.write_text(
                 json.dumps({"summary": {}}),
                 encoding="utf-8",
             )
+
             club_path.write_text(
                 json.dumps({"summary": {}}),
                 encoding="utf-8",
@@ -92,21 +102,56 @@ class PipelineApiContractTests(
                 encoding="utf-8",
             )
 
+            @contextmanager
+            def fake_normalized_analysis_video(
+                source_path: Path,
+            ):
+                class FakeNormalizedVideo:
+                    def __init__(
+                        self,
+                        source_path: Path,
+                        analysis_path: Path,
+                    ) -> None:
+                        self.source_path = source_path
+                        self.analysis_path = analysis_path
+
+                yield FakeNormalizedVideo(
+                    source_path=(
+                        source_path.resolve()
+                    ),
+                    analysis_path=(
+                        normalized_video_path.resolve()
+                    ),
+                )
+
             with (
+                patch(
+                    "app.pipeline.normalized_analysis_video",
+                    side_effect=(
+                        fake_normalized_analysis_video
+                    ),
+                ),
                 patch(
                     "app.pipeline.analyze_video_pose",
                     return_value={
-                        "timelinePath": str(pose_path),
+                        "timelinePath": str(
+                            pose_path
+                        ),
                         "poseDetection": {},
                         "activePoseWindow": {},
                     },
-                ),
+                ) as analyze_video_pose_mock,
                 patch(
                     "app.pipeline.load_geometry_pose_timeline",
                     return_value=(
-                        "swing.mp4",
-                        {"width": 1920, "height": 1080},
-                        {"selectedRotation": "none"},
+                        "swing-normalized.mp4",
+                        {
+                            "width": 1920,
+                            "height": 1080,
+                        },
+                        {
+                            "selectedRotation": "none",
+                        },
                         [],
                     ),
                 ),
@@ -161,7 +206,9 @@ class PipelineApiContractTests(
                 patch(
                     "app.pipeline.analyze_club_detection",
                     return_value={
-                        "clubDetectionPath": str(club_path),
+                        "clubDetectionPath": str(
+                            club_path
+                        ),
                         "clubVisualizationDirectory": (
                             str(visualizations)
                         ),
@@ -169,11 +216,13 @@ class PipelineApiContractTests(
                             "summary": {},
                         },
                     },
-                ),
+                ) as analyze_club_detection_mock,
                 patch(
                     "app.pipeline.analyze_golf_metrics",
                     return_value={
-                        "golfMetricsPath": str(report_path),
+                        "golfMetricsPath": str(
+                            report_path
+                        ),
                     },
                 ),
             ):
@@ -182,54 +231,136 @@ class PipelineApiContractTests(
                     handedness="right",
                 )
 
-            self.assertTrue(result["success"])
+            self.assertTrue(
+                result["success"]
+            )
+
             self.assertEqual(
                 result["apiVersion"],
                 ANALYSIS_API_VERSION,
             )
+
             self.assertIn(
                 "analysis",
                 result,
             )
+
             self.assertEqual(
                 result["analysis"][
                     "contractVersion"
                 ],
                 ANALYSIS_API_VERSION,
             )
+
             self.assertEqual(
                 result["analysis"]["status"],
                 "partial",
             )
+
             self.assertEqual(
-                result["analysis"]["engine"]["name"],
+                result["analysis"]["engine"][
+                    "name"
+                ],
                 "tempo-ai-analysis-engine",
             )
+
             self.assertIn(
                 "processedAt",
                 result["analysis"]["engine"],
             )
+
             self.assertGreaterEqual(
                 result["analysis"]["engine"][
                     "durationMilliseconds"
                 ],
                 0.0,
             )
+
             self.assertEqual(
                 result["analysis"]["source"][
                     "videoPath"
                 ],
                 str(video_path.resolve()),
             )
+
+            self.assertEqual(
+                result["analysis"]["source"][
+                    "sourceVideo"
+                ],
+                str(video_path.resolve()),
+            )
+
+            self.assertEqual(
+                result["videoPath"],
+                str(video_path.resolve()),
+            )
+
+            self.assertEqual(
+                result["report"]["sourceVideo"],
+                str(video_path.resolve()),
+            )
+
             self.assertEqual(
                 result["analysis"]["artifacts"][
                     "golfMetricsPath"
                 ],
                 str(report_path.resolve()),
             )
+
             self.assertEqual(
-                result["report"],
-                report_payload,
+                result["artifacts"][
+                    "golfMetricsPath"
+                ],
+                str(report_path.resolve()),
+            )
+
+            self.assertEqual(
+                result["handedness"],
+                "right",
+            )
+
+            analyze_video_pose_mock.assert_called_once_with(
+                normalized_video_path.resolve()
+            )
+
+            analyze_club_detection_mock.assert_called_once()
+
+            club_detection_call = (
+                analyze_club_detection_mock.call_args
+            )
+
+            self.assertEqual(
+                club_detection_call.kwargs[
+                    "video_path"
+                ],
+                normalized_video_path.resolve(),
+            )
+
+            self.assertEqual(
+                club_detection_call.kwargs[
+                    "pose_timeline_path"
+                ],
+                pose_path.resolve(),
+            )
+
+            self.assertEqual(
+                club_detection_call.kwargs[
+                    "refined_phases_path"
+                ].resolve(),
+                phases_path.resolve(),
+            )
+
+            persisted_report = json.loads(
+                report_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertEqual(
+                persisted_report[
+                    "sourceVideo"
+                ],
+                str(video_path.resolve()),
             )
 
 
