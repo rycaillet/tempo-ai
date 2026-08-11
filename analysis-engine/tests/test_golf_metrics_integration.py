@@ -1182,6 +1182,213 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
                 summary,
             )
 
+    def test_analyze_golf_metrics_allows_missing_takeaway(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as (
+            temporary_directory
+        ):
+            temp_path = Path(temporary_directory)
+
+            geometry_path = temp_path / (
+                "missing-takeaway-geometry-analysis.json"
+            )
+            refined_phases_path = temp_path / (
+                "missing-takeaway-refined-phases.json"
+            )
+            output_path = temp_path / (
+                "missing-takeaway-golf-metrics.json"
+            )
+
+            geometry_payload = (
+                self.build_geometry_payload()
+            )
+
+            refined_phases_payload = (
+                self.build_refined_phases_payload()
+            )
+
+            phases = refined_phases_payload["phases"]
+
+            self.assertIsInstance(phases, dict)
+            assert isinstance(phases, dict)
+
+            phases["takeaway"] = None
+
+            geometry_path.write_text(
+                json.dumps(geometry_payload),
+                encoding="utf-8",
+            )
+
+            refined_phases_path.write_text(
+                json.dumps(refined_phases_payload),
+                encoding="utf-8",
+            )
+
+            command_result = analyze_golf_metrics(
+                geometry_path=geometry_path,
+                refined_phases_path=(
+                    refined_phases_path
+                ),
+                output_path=output_path,
+                handedness="right",
+            )
+
+            self.assertTrue(
+                command_result["success"]
+            )
+            self.assertTrue(
+                output_path.exists()
+            )
+
+            result = json.loads(
+                output_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            summary = result["summary"]
+            metrics = result["metrics"]
+            validation = metrics["phaseValidation"]
+            eligibility = metrics[
+                "feedbackEligibility"
+            ]
+            transitions = metrics["transitions"]
+
+            self.assertEqual(
+                summary["referenceFrameCount"],
+                5,
+            )
+
+            self.assertNotIn(
+                "takeawayReference",
+                result["phaseFrames"],
+            )
+
+            self.assertIn(
+                "addressReference",
+                result["phaseFrames"],
+            )
+            self.assertIn(
+                "topOfBackswing",
+                result["phaseFrames"],
+            )
+            self.assertIn(
+                "downswingStart",
+                result["phaseFrames"],
+            )
+            self.assertIn(
+                "impactReference",
+                result["phaseFrames"],
+            )
+            self.assertIn(
+                "finishReference",
+                result["phaseFrames"],
+            )
+
+            self.assertIsNone(
+                transitions["addressToTakeaway"]
+            )
+            self.assertIsNone(
+                transitions["takeawayToTop"]
+            )
+
+            self.assertIsNotNone(
+                transitions["addressToTop"]
+            )
+            self.assertIsNotNone(
+                transitions["addressToDownswingStart"]
+            )
+            self.assertIsNotNone(
+                transitions["addressToImpact"]
+            )
+            self.assertIsNotNone(
+                transitions["addressToFinish"]
+            )
+            self.assertIsNotNone(
+                transitions["topToImpact"]
+            )
+
+            self.assertEqual(
+                validation["status"],
+                "review",
+            )
+            self.assertEqual(
+                validation["passedCheckCount"],
+                8,
+            )
+            self.assertEqual(
+                validation["totalCheckCount"],
+                9,
+            )
+            self.assertEqual(
+                validation["failedChecks"],
+                [
+                    "takeawayTimingPlausible",
+                ],
+            )
+
+            self.assertIsNone(
+                validation[
+                    "durationsSeconds"
+                ][
+                    "addressToTakeawaySeconds"
+                ]
+            )
+
+            self.assertEqual(
+                eligibility["status"],
+                "eligible_with_caution",
+            )
+            self.assertEqual(
+                eligibility["mode"],
+                "cautious",
+            )
+            self.assertTrue(
+                eligibility[
+                    "requiresDisclaimer"
+                ]
+            )
+
+            self.assertIn(
+                "tempo",
+                metrics,
+            )
+            self.assertIn(
+                "addressPosture",
+                metrics,
+            )
+            self.assertIn(
+                "headStability",
+                metrics,
+            )
+            self.assertIn(
+                "weightShift",
+                metrics,
+            )
+            self.assertIn(
+                "rotation",
+                metrics,
+            )
+
+            self.assertNotEqual(
+                metrics["tempo"]["classification"],
+                "incomplete",
+            )
+
+            self.assertNotEqual(
+                metrics[
+                    "addressPosture"
+                ]["classification"],
+                "incomplete",
+            )
+
+            self.assertNotEqual(
+                metrics[
+                    "headStability"
+                ]["classification"],
+                "incomplete",
+            )
 
 if __name__ == "__main__":
     unittest.main()

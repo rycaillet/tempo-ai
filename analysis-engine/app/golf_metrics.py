@@ -180,6 +180,9 @@ def get_reference_frame_indices(
     for reference_name, phase_name in phase_mapping.items():
         phase = phases.get(phase_name)
 
+        if phase is None and phase_name == "takeaway":
+            continue
+
         if not isinstance(phase, dict):
             raise ValueError(
                 "Refined phase analysis is missing "
@@ -546,7 +549,11 @@ def build_phase_validation(
     timestamps: dict[str, float] = {}
 
     for reference_name in ordered_reference_names:
-        reference = references[reference_name]
+        reference = references.get(reference_name)
+
+        if reference is None:
+            continue
+
         frame_index = reference.get("frameIndex")
         timestamp = reference.get("timestampSeconds")
 
@@ -565,41 +572,76 @@ def build_phase_validation(
         frame_indices[reference_name] = frame_index
         timestamps[reference_name] = float(timestamp)
 
+    available_reference_names = [
+        reference_name
+        for reference_name in ordered_reference_names
+        if reference_name in frame_indices
+    ]
+
     ordered_frames = [
         frame_indices[name]
-        for name in ordered_reference_names
+        for name in available_reference_names
     ]
     ordered_times = [
         timestamps[name]
-        for name in ordered_reference_names
+        for name in available_reference_names
     ]
 
-    durations = {
-        "addressToTakeawaySeconds": (
-            timestamps["takeawayReference"]
-            - timestamps["addressReference"]
+    def calculate_duration(
+        start_name: str,
+        end_name: str,
+    ) -> float | None:
+        start = timestamps.get(start_name)
+        end = timestamps.get(end_name)
+
+        if start is None or end is None:
+            return None
+
+        return end - start
+
+    durations: dict[str, float | None] = {
+        "addressToTakeawaySeconds": calculate_duration(
+            "addressReference",
+            "takeawayReference",
         ),
-        "backswingSeconds": (
-            timestamps["topOfBackswing"]
-            - timestamps["addressReference"]
+        "backswingSeconds": calculate_duration(
+            "addressReference",
+            "topOfBackswing",
         ),
-        "topToDownswingStartSeconds": (
-            timestamps["downswingStart"]
-            - timestamps["topOfBackswing"]
+        "topToDownswingStartSeconds": calculate_duration(
+            "topOfBackswing",
+            "downswingStart",
         ),
-        "downswingSeconds": (
-            timestamps["impactReference"]
-            - timestamps["topOfBackswing"]
+        "downswingSeconds": calculate_duration(
+            "topOfBackswing",
+            "impactReference",
         ),
-        "downswingStartToImpactSeconds": (
-            timestamps["impactReference"]
-            - timestamps["downswingStart"]
+        "downswingStartToImpactSeconds": calculate_duration(
+            "downswingStart",
+            "impactReference",
         ),
-        "impactToFinishSeconds": (
-            timestamps["finishReference"]
-            - timestamps["impactReference"]
+        "impactToFinishSeconds": calculate_duration(
+            "impactReference",
+            "finishReference",
         ),
     }
+
+    def duration_is_between(
+        duration_name: str,
+        minimum: float,
+        maximum: float,
+        *,
+        minimum_is_exclusive: bool = False,
+    ) -> bool:
+        value = durations[duration_name]
+
+        if value is None:
+            return False
+
+        if minimum_is_exclusive:
+            return minimum < value <= maximum
+
+        return minimum <= value <= maximum
 
     checks = {
         "frameOrderStrictlyIncreasing": all(
@@ -618,39 +660,38 @@ def build_phase_validation(
         ),
         "allReferenceFramesHavePose": all(
             bool(references[name].get("poseDetected"))
-            for name in ordered_reference_names
+            for name in available_reference_names
         ),
-        "takeawayTimingPlausible": (
-            0.02
-            <= durations["addressToTakeawaySeconds"]
-            <= 0.75
+        "takeawayTimingPlausible": duration_is_between(
+            "addressToTakeawaySeconds",
+            0.02,
+            0.75,
         ),
-        "backswingTimingPlausible": (
-            0.30
-            <= durations["backswingSeconds"]
-            <= 3.00
+        "backswingTimingPlausible": duration_is_between(
+            "backswingSeconds",
+            0.30,
+            3.00,
         ),
-        "transitionTimingPlausible": (
-            0.00
-            < durations["topToDownswingStartSeconds"]
-            <= 0.75
+        "transitionTimingPlausible": duration_is_between(
+            "topToDownswingStartSeconds",
+            0.00,
+            0.75,
+            minimum_is_exclusive=True,
         ),
-        "downswingTimingPlausible": (
-            0.10
-            <= durations["downswingSeconds"]
-            <= 1.50
+        "downswingTimingPlausible": duration_is_between(
+            "downswingSeconds",
+            0.10,
+            1.50,
         ),
-        "impactTimingPlausible": (
-            0.02
-            <= durations[
-                "downswingStartToImpactSeconds"
-            ]
-            <= 0.75
+        "impactTimingPlausible": duration_is_between(
+            "downswingStartToImpactSeconds",
+            0.02,
+            0.75,
         ),
-        "finishTimingPlausible": (
-            0.10
-            <= durations["impactToFinishSeconds"]
-            <= 3.00
+        "finishTimingPlausible": duration_is_between(
+            "impactToFinishSeconds",
+            0.10,
+            3.00,
         ),
     }
 
@@ -687,7 +728,11 @@ def build_phase_validation(
         "failedChecks": failed_checks,
         "checks": checks,
         "durationsSeconds": {
-            name: round_value(value)
+            name: (
+                round_value(value)
+                if value is not None
+                else None
+            )
             for name, value in durations.items()
         },
         "thresholds": {
@@ -864,7 +909,20 @@ def build_arm_metrics(
         values: dict[str, float | None] = {}
 
         for reference_name in REFERENCE_NAMES:
-            geometry = references[reference_name]["geometry"]
+            reference = references.get(
+                reference_name
+            )
+
+            if not isinstance(reference, dict):
+                values[reference_name] = None
+                continue
+
+            geometry = reference.get("geometry")
+
+            if not isinstance(geometry, dict):
+                values[reference_name] = None
+                continue
+
             value = geometry.get(geometry_key)
 
             values[reference_name] = (
@@ -1923,20 +1981,30 @@ def analyze_golf_metrics(
     )
 
     address_reference = references["addressReference"]
-    takeaway_reference = references["takeawayReference"]
+    takeaway_reference = references.get(
+        "takeawayReference"
+    )
 
     transitions = {
-        "addressToTakeaway": build_transition_metrics(
-            address_reference,
-            takeaway_reference,
-            frame_width,
-            frame_height,
+        "addressToTakeaway": (
+            build_transition_metrics(
+                address_reference,
+                takeaway_reference,
+                frame_width,
+                frame_height,
+            )
+            if isinstance(takeaway_reference, dict)
+            else None
         ),
-        "takeawayToTop": build_transition_metrics(
-            takeaway_reference,
-            references["topOfBackswing"],
-            frame_width,
-            frame_height,
+        "takeawayToTop": (
+            build_transition_metrics(
+                takeaway_reference,
+                references["topOfBackswing"],
+                frame_width,
+                frame_height,
+            )
+            if isinstance(takeaway_reference, dict)
+            else None
         ),
         "addressToTop": build_transition_metrics(
             address_reference,
