@@ -21,9 +21,16 @@ def create_impact_detection(
     hand_anchor: dict[str, float] | None = None,
     shaft_start: dict[str, float] | None = None,
     shaft_end: dict[str, float] | None = None,
-    smoothed_shaft_start: dict[str, float] | None = None,
-    smoothed_shaft_end: dict[str, float] | None = None,
+    smoothed_shaft_start: (
+        dict[str, float] | None
+    ) = None,
+    smoothed_shaft_end: (
+        dict[str, float] | None
+    ) = None,
     failure_reason: str | None = None,
+    candidate_diagnostics: (
+        dict[str, Any] | None
+    ) = None,
 ) -> dict[str, Any]:
     return {
         "phase": "impactReference",
@@ -78,6 +85,7 @@ def create_impact_detection(
             else None
         ),
         "candidateCount": 3 if detected else 0,
+        "candidateDiagnostics": candidate_diagnostics,
         "failureReason": failure_reason,
         "debugImagePath": None,
     }
@@ -444,6 +452,50 @@ class ShaftLeanTests(unittest.TestCase):
                 "shaftGeometrySource"
             ],
             "raw",
+        )
+
+    def test_rejects_short_single_fallback_impact_fragment(
+        self,
+    ) -> None:
+        result = build_shaft_lean_metrics(
+            {
+                "frames": [
+                    create_impact_detection(
+                        candidate_diagnostics={
+                            "candidateEvaluations": [
+                                {
+                                    "selected": True,
+                                    "lengthRatio": 0.05,
+                                    "provenance": {
+                                        "houghPass": "fallback",
+                                        "segmentSource": "single",
+                                    },
+                                }
+                            ],
+                        },
+                    ),
+                ],
+            }
+        )
+
+        self.assertEqual(
+            result["classification"],
+            "incomplete",
+        )
+        self.assertEqual(
+            result["measurementCompleteness"]["ratio"],
+            0.0,
+        )
+        self.assertEqual(
+            result["confidence"],
+            0.0,
+        )
+        self.assertFalse(
+            result["referenceFrame"]["clubDetected"]
+        )
+        self.assertIn(
+            "short fallback shaft fragment",
+            result["feedback"]["message"],
         )
 
     def test_builds_available_metrics_from_smoothed_geometry(

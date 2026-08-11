@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
+from app.metrics.club_evidence import (
+    has_metric_quality_club_evidence,
+)
 
 
 REFERENCE_PHASES = (
@@ -141,6 +144,9 @@ def build_phase_measurement(
     available = (
         bool(detection.get("detected"))
         and angle is not None
+        and has_metric_quality_club_evidence(
+            detection
+        )
     )
 
     confidence_value = detection.get(

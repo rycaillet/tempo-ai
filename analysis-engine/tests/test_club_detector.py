@@ -1107,12 +1107,33 @@ class ClubDetectorTests(
         ]
 
         self.assertEqual(len(candidate_records), 2)
-        self.assertFalse(candidate_records[0]["selected"])
-        self.assertTrue(candidate_records[0]["accepted"])
-        self.assertTrue(candidate_records[1]["selected"])
-        self.assertTrue(candidate_records[1]["accepted"])
-        self.assertEqual(candidate_records[0]["index"], 0)
-        self.assertEqual(candidate_records[1]["index"], 1)
+
+        self.assertFalse(
+            candidate_records[0]["selected"]
+        )
+        self.assertFalse(
+            candidate_records[0]["accepted"]
+        )
+        self.assertIn(
+            "distal_shift_exceeds_threshold",
+            candidate_records[0]["rejectionReasons"],
+        )
+
+        self.assertTrue(
+            candidate_records[1]["selected"]
+        )
+        self.assertTrue(
+            candidate_records[1]["accepted"]
+        )
+
+        self.assertEqual(
+            candidate_records[0]["index"],
+            0,
+        )
+        self.assertEqual(
+            candidate_records[1]["index"],
+            1,
+        )
 
     def test_temporal_selection_rejects_all_implausible_candidates(
         self,
@@ -1183,6 +1204,150 @@ class ClubDetectorTests(
         self.assertIn(
             "angle_change_exceeds_threshold",
             candidate_records[0]["rejectionReasons"],
+        )
+
+    def test_temporal_candidate_rejects_excessive_distal_shift(
+        self,
+    ) -> None:
+        previous_hand_anchor = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        previous_candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=300,
+            end_y=200,
+            hand_anchor=previous_hand_anchor,
+        )
+
+        current_hand_anchor = {
+            "x": 105.0,
+            "y": 105.0,
+        }
+
+        shifted_candidate = create_test_candidate(
+            start_x=105,
+            start_y=105,
+            end_x=700,
+            end_y=400,
+            hand_anchor=current_hand_anchor,
+        )
+
+        shifted_candidate["score"] = 0.95
+
+        evaluation = (
+            calculate_temporal_candidate_evaluation(
+                shifted_candidate,
+                current_hand_anchor=(
+                    current_hand_anchor
+                ),
+                previous_shaft_line=(
+                    previous_candidate["line"]
+                ),
+                previous_hand_anchor=(
+                    previous_hand_anchor
+                ),
+                frame_width=1000,
+                frame_height=800,
+            )
+        )
+
+        self.assertGreater(
+            evaluation["distalShiftRatio"],
+            0.30,
+        )
+
+        self.assertFalse(
+            evaluation["accepted"]
+        )
+
+    def test_temporal_selection_does_not_rescue_excessive_distal_shift(
+        self,
+    ) -> None:
+        previous_hand_anchor = {
+            "x": 100.0,
+            "y": 100.0,
+        }
+
+        previous_candidate = create_test_candidate(
+            start_x=100,
+            start_y=100,
+            end_x=300,
+            end_y=200,
+            hand_anchor=previous_hand_anchor,
+        )
+
+        current_hand_anchor = {
+            "x": 105.0,
+            "y": 105.0,
+        }
+
+        shifted_candidate = create_test_candidate(
+            start_x=105,
+            start_y=105,
+            end_x=700,
+            end_y=400,
+            hand_anchor=current_hand_anchor,
+        )
+
+        shifted_candidate["score"] = 0.95
+        shifted_candidate[
+            "endpointProximityScore"
+        ] = 0.95
+        shifted_candidate[
+            "segmentProximityScore"
+        ] = 0.95
+        shifted_candidate["provenance"][
+            "searchRegion"
+        ] = "corridor"
+
+        diagnostics = create_candidate_diagnostics()
+
+        selected = select_shaft_candidate(
+            [shifted_candidate],
+            current_hand_anchor=current_hand_anchor,
+            previous_shaft_line=(
+                previous_candidate["line"]
+            ),
+            previous_hand_anchor=(
+                previous_hand_anchor
+            ),
+            frame_width=1000,
+            frame_height=800,
+            diagnostics=diagnostics,
+        )
+
+        self.assertIsNone(selected)
+
+        self.assertEqual(
+            diagnostics["temporalSelectionMode"],
+            "rejected",
+        )
+
+        candidate_records = diagnostics[
+            "candidateEvaluations"
+        ]
+
+        self.assertEqual(
+            len(candidate_records),
+            1,
+        )
+
+        self.assertFalse(
+            candidate_records[0]["accepted"]
+        )
+
+        self.assertFalse(
+            candidate_records[0]["selected"]
+        )
+
+        self.assertIn(
+            "distal_shift_exceeds_threshold",
+            candidate_records[0][
+                "rejectionReasons"
+            ],
         )
 
     def test_first_temporal_selection_uses_image_score(

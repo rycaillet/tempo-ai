@@ -3,6 +3,10 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 
+from app.metrics.club_evidence import (
+    has_metric_quality_club_evidence,
+)
+
 
 IMPACT_PHASE_NAME = "impactReference"
 
@@ -468,6 +472,19 @@ def build_shaft_lean_metrics(
         return build_unavailable_result(
             impact_detection,
             reason,
+        )
+
+    if not has_metric_quality_club_evidence(
+        impact_detection
+    ):
+        return build_unavailable_result(
+            impact_detection,
+            (
+                "The impact club detection contains only "
+                "a short fallback shaft fragment and does "
+                "not provide enough geometry for a reliable "
+                "shaft-lean measurement."
+            ),
         )
 
     hand_anchor = impact_detection.get(

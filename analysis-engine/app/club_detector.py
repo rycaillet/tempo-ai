@@ -2330,6 +2330,8 @@ def calculate_temporal_candidate_evaluation(
     accepted = (
         angle_change
         <= MAXIMUM_TEMPORAL_ANGLE_CHANGE_DEGREES
+        and distal_shift_ratio
+        <= MAXIMUM_TEMPORAL_DISTAL_SHIFT_RATIO
         and temporal_score
         >= MINIMUM_TEMPORAL_SELECTION_SCORE
     )
@@ -2372,6 +2374,15 @@ def build_candidate_evaluation_diagnostics(
         ):
             rejection_reasons.append(
                 "angle_change_exceeds_threshold"
+            )
+
+        if (
+            distal_shift_ratio is not None
+            and distal_shift_ratio
+            > MAXIMUM_TEMPORAL_DISTAL_SHIFT_RATIO
+        ):
+            rejection_reasons.append(
+                "distal_shift_exceeds_threshold"
             )
 
         if (
@@ -2557,6 +2568,8 @@ def select_shaft_candidate(
                     "segmentProximityScore"
                 ]
                 >= MINIMUM_IMAGE_RESCUE_SEGMENT_PROXIMITY_SCORE
+                and evaluation["distalShiftRatio"]
+                <= MAXIMUM_TEMPORAL_DISTAL_SHIFT_RATIO
             )
         ]
 

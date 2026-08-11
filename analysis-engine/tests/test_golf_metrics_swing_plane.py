@@ -36,6 +36,9 @@ class SwingPlaneMetricTests(unittest.TestCase):
         detection_source: str = "image",
         confidence: float = 0.8,
         phase_offset_frames: int = 0,
+        candidate_diagnostics: (
+            dict[str, Any] | None
+        ) = None,
     ) -> dict[str, Any]:
         return {
             "phase": phase,
@@ -57,6 +60,9 @@ class SwingPlaneMetricTests(unittest.TestCase):
                 else None
             ),
             "detectionSource": detection_source,
+            "candidateDiagnostics": (
+                candidate_diagnostics
+            ),
         }
 
     def build_club_detection(
@@ -205,6 +211,42 @@ class SwingPlaneMetricTests(unittest.TestCase):
         self.assertEqual(
             result["geometrySource"],
             "raw",
+        )
+
+    def test_build_phase_measurement_rejects_short_single_fallback_fragment(
+        self,
+    ) -> None:
+        frame = self.build_frame(
+            phase="impactReference",
+            frame_index=50,
+            angle=120.0,
+            candidate_diagnostics={
+                "candidateEvaluations": [
+                    {
+                        "selected": True,
+                        "lengthRatio": 0.05,
+                        "provenance": {
+                            "houghPass": "fallback",
+                            "segmentSource": "single",
+                        },
+                    }
+                ],
+            },
+        )
+
+        result = build_phase_measurement(
+            frame,
+            phase_name="impactReference",
+        )
+
+        self.assertFalse(
+            result["available"]
+        )
+        self.assertIsNone(
+            result["shaftAngleDegrees"]
+        )
+        self.assertIsNone(
+            result["geometrySource"]
         )
 
     def test_build_swing_plane_metrics_returns_observed_result(
