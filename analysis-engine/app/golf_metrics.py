@@ -643,6 +643,16 @@ def build_phase_validation(
 
         return minimum <= value <= maximum
 
+    takeaway_timing_available = (
+        durations["addressToTakeawaySeconds"] is not None
+    )
+
+    skipped_checks = (
+        []
+        if takeaway_timing_available
+        else ["takeawayTimingPlausible"]
+    )
+
     checks = {
         "frameOrderStrictlyIncreasing": all(
             earlier < later
@@ -662,10 +672,18 @@ def build_phase_validation(
             bool(references[name].get("poseDetected"))
             for name in available_reference_names
         ),
-        "takeawayTimingPlausible": duration_is_between(
-            "addressToTakeawaySeconds",
-            0.02,
-            0.75,
+        **(
+            {
+                "takeawayTimingPlausible": (
+                    duration_is_between(
+                        "addressToTakeawaySeconds",
+                        0.02,
+                        0.75,
+                    )
+                )
+            }
+            if takeaway_timing_available
+            else {}
         ),
         "backswingTimingPlausible": duration_is_between(
             "backswingSeconds",
@@ -726,6 +744,7 @@ def build_phase_validation(
         "passedCheckCount": passed_check_count,
         "totalCheckCount": total_check_count,
         "failedChecks": failed_checks,
+        "skippedChecks": skipped_checks,
         "checks": checks,
         "durationsSeconds": {
             name: (

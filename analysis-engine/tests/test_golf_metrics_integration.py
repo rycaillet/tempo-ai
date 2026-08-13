@@ -1311,7 +1311,7 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
 
             self.assertEqual(
                 validation["status"],
-                "review",
+                "valid",
             )
             self.assertEqual(
                 validation["passedCheckCount"],
@@ -1319,10 +1319,14 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(
                 validation["totalCheckCount"],
-                9,
+                8,
             )
             self.assertEqual(
                 validation["failedChecks"],
+                [],
+            )
+            self.assertEqual(
+                validation["skippedChecks"],
                 [
                     "takeawayTimingPlausible",
                 ],
@@ -1338,13 +1342,13 @@ class GolfMetricsIntegrationTests(unittest.TestCase):
 
             self.assertEqual(
                 eligibility["status"],
-                "eligible_with_caution",
+                "eligible",
             )
             self.assertEqual(
                 eligibility["mode"],
-                "cautious",
+                "normal",
             )
-            self.assertTrue(
+            self.assertFalse(
                 eligibility[
                     "requiresDisclaimer"
                 ]
